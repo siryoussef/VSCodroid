@@ -136,6 +136,21 @@ class TerminalShellPathTest {
             )
         }
 
+        @Test
+        fun `default profile is nix-on-droid with an init script argument`() {
+            createDefaultSettings()
+            val settings = File(Environment.getMachineSettingsPath(context))
+            val text = settings.readText()
+            assertTrue(
+                text.contains(""""terminal.integrated.defaultProfile.linux": "nix-on-droid""""),
+                "default terminal profile should be nix-on-droid:\n$text"
+            )
+            assertTrue(
+                text.contains("nix-on-droid-login"),
+                "nix-on-droid profile should pass the login init script:\n$text"
+            )
+        }
+
         /**
          * Runs the real writer rather than asserting on the string it embeds.
          *

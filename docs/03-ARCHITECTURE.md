@@ -103,7 +103,7 @@ flowchart TD
       end
     end
 
-    LIBS["Native Libraries (jniLibs)<br/>libnode.so, libpython.so, libgit.so, libgit-remote-curl.so,<br/>libbash.so, libtmux.so, libmake.so, libripgrep.so,<br/>libssh.so, libssh-keygen.so, libldmusl.so, libexec-trampoline.so"]
+    LIBS["Native Libraries (jniLibs)<br/>libnode.so, libpython.so, libgit.so, libgit-remote-curl.so,<br/>libbash.so, libtmux.so, libmake.so, libripgrep.so,<br/>libssh.so, libssh-keygen.so, libldmusl.so, libexec-trampoline.so,<br/>libproot.so"]
   end
 
   EXTRAROW --> WEBVIEW
@@ -236,13 +236,13 @@ owning extension is what frees a slot.
 
 ---
 
-### ADR-005: bash directly through node-pty for terminals
+### ADR-005: Nix-on-Droid and bash through node-pty for terminals
 
 **Status**: Accepted
 
 **Context**: VS Code supports multiple terminal tabs, and every terminal process counts toward Android's 32-process phantom limit. The limit has to be respected without changing what a terminal is.
 
-**Decision**: Each VS Code terminal spawns bash directly through node-pty on a real PTY (`/dev/pts/*`). `FirstRunSetup` writes a single `bash` profile into the default settings, with `terminal.integrated.defaultProfile.linux` set to `bash` and its `path` taken from `Environment.getTerminalShellPath`. The phantom budget is held down instead by hosting the Extension Host and the Pty Host as worker threads (patches `0003` and `0004`), which are threads rather than processes and so cost nothing against it. tmux stays bundled as a standalone tool a user can run from a terminal; nothing in the terminal path goes through it.
+**Decision**: Terminals default to Nix-on-Droid, spawning `proot` (`libproot.so`) via node-pty on a real PTY (`/dev/pts/*`) into a rootless Nix-on-Droid environment, with a standalone `bash` profile also available. `FirstRunSetup` writes `terminal.integrated.defaultProfile.linux` set to `nix-on-droid` with an `--init-file` launcher that invokes `libproot.so` when the Nix environment is available and falls back cleanly to bash. The phantom budget is held down instead by hosting the Extension Host and the Pty Host as worker threads (patches `0003` and `0004`), which are threads rather than processes and so cost nothing against it. tmux stays bundled as a standalone tool a user can run from a terminal; nothing in the terminal path goes through it.
 
 **Rationale**:
 - A real PTY is what job control, `isatty`, resize signals and shell integration all need; anything layered in front of bash is another thing that can break them

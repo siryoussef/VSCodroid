@@ -164,6 +164,11 @@ plans/
 *.orig
 toolchain-zips/
 
+# ===== Nix =====
+result
+result-*
+.direnv/
+
 # Where release.yml stages downloaded build artifacts; a local run leaves it behind
 /artifacts/
 

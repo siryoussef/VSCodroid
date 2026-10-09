@@ -1392,6 +1392,7 @@ class FirstRunSetup(
             "make" to "libmake.so",
             "ssh" to "libssh.so",
             "ssh-keygen" to "libssh-keygen.so",
+            "proot" to "libproot.so",
         )
 
         var created = 0
@@ -1425,6 +1426,202 @@ class FirstRunSetup(
             }
         }
         Logger.i(tag, "Tool symlinks: $created created, $updated updated in usr/bin/")
+
+        setupNixOnDroid()
+    }
+
+    /**
+     * Sets up the Nix-on-Droid launcher and bootstrap scripts.
+     *
+     * Writes:
+     *  - `usr/bin/nix-on-droid-login`: the script bash sources via `--init-file` in the
+     *    default terminal profile. It detects whether the Nix store is present, sets up
+     *    proot bind mounts, and `exec`s `libproot.so` into the Nix-on-Droid environment.
+     *    If Nix is not yet bootstrapped, it displays an informative guide and stays in bash.
+     *  - `usr/bin/vscodroid-nix-bootstrap`: the tool users can run to download and extract
+     *    the Nix-on-Droid bootstrap archive into `$filesDir/nix`.
+     *  - `usr/bin/nix-on-droid`: convenience wrapper pointing to `nix-on-droid-login`.
+     */
+    fun setupNixOnDroid() {
+        val filesDir = context.filesDir.absolutePath
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        val homeDir = "$filesDir/home"
+        val nixDir = Environment.getNixDir(context)
+        val binDir = File(context.filesDir, "usr/bin")
+        binDir.mkdirs()
+
+        // 1. nix-on-droid-login script
+        val loginScript = File(Environment.getNixOnDroidInitPath(context))
+        val loginContent = """
+            # Nix-on-Droid environment launcher for VSCodroid
+            # Sourced by bash --init-file when launching the default terminal profile.
+
+            NIX_DIR="$nixDir"
+            FILES_DIR="$filesDir"
+            HOME_DIR="$homeDir"
+            NATIVE_LIB_DIR="$nativeLibDir"
+            PROOT_BIN="${'$'}NATIVE_LIB_DIR/libproot.so"
+
+            # Load the user's standard bash environment first
+            if [ -f "${'$'}HOME_DIR/.bashrc" ]; then
+                . "${'$'}HOME_DIR/.bashrc"
+            fi
+
+            # Locate the Nix bash executable
+            NIX_BASH=""
+            if [ -x "${'$'}NIX_DIR/var/nix/profiles/default/bin/bash" ]; then
+                NIX_BASH="${'$'}NIX_DIR/var/nix/profiles/default/bin/bash"
+            elif [ -x "${'$'}NIX_DIR/var/nix/profiles/per-user/nix-on-droid/profile/bin/bash" ]; then
+                NIX_BASH="${'$'}NIX_DIR/var/nix/profiles/per-user/nix-on-droid/profile/bin/bash"
+            elif [ -d "${'$'}NIX_DIR/nix/store" ]; then
+                NIX_BASH=${'$'}(find "${'$'}NIX_DIR/nix/store" -maxdepth 3 -name bash -type f -perm -111 2>/dev/null | head -n 1)
+            elif [ -d "${'$'}NIX_DIR/store" ]; then
+                NIX_BASH=${'$'}(find "${'$'}NIX_DIR/store" -maxdepth 3 -name bash -type f -perm -111 2>/dev/null | head -n 1)
+            fi
+
+            # If Nix and PRoot are available, enter the Nix-on-Droid environment
+            if [ -n "${'$'}NIX_BASH" ] && [ -x "${'$'}PROOT_BIN" ]; then
+                export USER="nix-on-droid"
+                export HOME="${'$'}HOME_DIR"
+                export PROOT_TMP_DIR="${'$'}NIX_DIR/tmp"
+                export PROOT_L2S_DIR="${'$'}NIX_DIR/.l2s"
+                mkdir -p "${'$'}PROOT_TMP_DIR" "${'$'}PROOT_L2S_DIR"
+
+                # Standard Nix bind mounts matching Nix-on-Droid upstream
+                NIX_STORE_MNT="-b ${'$'}NIX_DIR/nix:/nix"
+                if [ ! -d "${'$'}NIX_DIR/nix" ] && [ -d "${'$'}NIX_DIR/store" ]; then
+                    NIX_STORE_MNT="-b ${'$'}NIX_DIR/store:/nix/store"
+                fi
+
+                exec "${'$'}PROOT_BIN" \
+                    ${'$'}NIX_STORE_MNT \
+                    -b "${'$'}NIX_DIR/etc:/etc" \
+                    -b "${'$'}NIX_DIR/usr:/usr" \
+                    -b "${'$'}NIX_DIR/tmp:/tmp" \
+                    -b "${'$'}NIX_DIR/dev/shm:/dev/shm" \
+                    -b "${'$'}HOME_DIR:${'$'}HOME_DIR" \
+                    -b "${'$'}HOME_DIR:/data/data/com.termux.nix/files/home" \
+                    -b "${'$'}FILES_DIR:${'$'}FILES_DIR" \
+                    -b /dev:/dev \
+                    -b /proc:/proc \
+                    -b /sys:/sys \
+                    -b /system:/system \
+                    --link2symlink \
+                    --sysvipc \
+                    "${'$'}NIX_BASH" -l
+            else
+                echo "================================================================="
+                echo "  VSCodroid - Nix-on-Droid Terminal Environment"
+                echo "================================================================="
+                echo "  Nix-on-Droid is your default terminal environment."
+                if [ ! -d "${'$'}NIX_DIR/nix/store" ] && [ ! -d "${'$'}NIX_DIR/store" ]; then
+                    echo "  Nix packages are not yet installed."
+                    echo "  To download and bootstrap Nix-on-Droid, run:"
+                    echo "    vscodroid-nix-bootstrap"
+                    echo ""
+                fi
+                echo "  Running in bundled Bash shell."
+                echo "================================================================="
+            fi
+        """.trimIndent() + "\n"
+
+        if (!loginScript.exists() || loginScript.readText() != loginContent) {
+            writeAtomically(loginScript) { it.write(loginContent.toByteArray()) }
+            try { Os.chmod(loginScript.absolutePath, 493) } catch (_: Exception) {}
+        }
+
+        // 2. vscodroid-nix-bootstrap installer script
+        val bootstrapScript = File(Environment.getNixBootstrapScriptPath(context))
+        val bootstrapContent = """
+            #!/usr/bin/env bash
+            # Bootstrap installer for Nix-on-Droid inside VSCodroid
+            set -euo pipefail
+
+            NIX_DIR="$nixDir"
+            FILES_DIR="$filesDir"
+            BOOTSTRAP_URL="${'$'}{NIX_ON_DROID_BOOTSTRAP_URL:-https://nix-on-droid.unboiled.info/bootstrap-release-24.05/bootstrap-aarch64.zip}"
+
+            echo "================================================================="
+            echo "  Installing Nix-on-Droid Bootstrap into VSCodroid"
+            echo "================================================================="
+            echo "Target: ${'$'}NIX_DIR"
+            mkdir -p "${'$'}NIX_DIR" "${'$'}NIX_DIR/tmp" "${'$'}NIX_DIR/.l2s"
+
+            ARCHIVE="${'$'}NIX_DIR/tmp/bootstrap.zip"
+            echo "Downloading Nix-on-Droid bootstrap archive (~37 MB)..."
+            echo "URL: ${'$'}BOOTSTRAP_URL"
+
+            if command -v curl >/dev/null 2>&1; then
+                curl -L --fail --progress-bar -o "${'$'}ARCHIVE" "${'$'}BOOTSTRAP_URL"
+            else
+                python3 -c "import urllib.request, sys; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])" "${'$'}BOOTSTRAP_URL" "${'$'}ARCHIVE"
+            fi
+
+            echo "Extracting bootstrap archive..."
+            python3 - "${'$'}ARCHIVE" "${'$'}NIX_DIR" <<'PY'
+            import sys, zipfile, os
+
+            archive_path = sys.argv[1]
+            dest_dir = sys.argv[2]
+
+            with zipfile.ZipFile(archive_path, 'r') as zf:
+                zf.extractall(dest_dir)
+
+            # Process SYMLINKS.txt
+            symlinks_txt = os.path.join(dest_dir, "SYMLINKS.txt")
+            if os.path.exists(symlinks_txt):
+                print("Restoring symlinks...")
+                with open(symlinks_txt, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or "←" not in line:
+                            continue
+                        target, link_rel = line.split("←", 1)
+                        link_path = os.path.join(dest_dir, link_rel.strip())
+                        os.makedirs(os.path.dirname(link_path), exist_ok=True)
+                        if os.path.lexists(link_path):
+                            try: os.unlink(link_path)
+                            except Exception: pass
+                        try:
+                            os.symlink(target.strip(), link_path)
+                        except Exception:
+                            pass
+
+            # Process EXECUTABLES.txt
+            executables_txt = os.path.join(dest_dir, "EXECUTABLES.txt")
+            if os.path.exists(executables_txt):
+                print("Setting executable permissions...")
+                with open(executables_txt, "r", encoding="utf-8") as f:
+                    for line in f:
+                        rel = line.strip()
+                        if not rel:
+                            continue
+                        path = os.path.join(dest_dir, rel)
+                        if os.path.exists(path):
+                            try: os.chmod(path, 0o755)
+                            except Exception: pass
+            PY
+
+            rm -f "${'$'}ARCHIVE"
+            echo ""
+            echo "================================================================="
+            echo "  Nix-on-Droid installation complete!"
+            echo "  Open a new terminal tab to start your Nix-on-Droid session."
+            echo "================================================================="
+        """.trimIndent() + "\n"
+
+        if (!bootstrapScript.exists() || bootstrapScript.readText() != bootstrapContent) {
+            writeAtomically(bootstrapScript) { it.write(bootstrapContent.toByteArray()) }
+            try { Os.chmod(bootstrapScript.absolutePath, 493) } catch (_: Exception) {}
+        }
+
+        // 3. Convenience symlink: usr/bin/nix-on-droid -> nix-on-droid-login
+        val nodLink = File(binDir, "nix-on-droid")
+        val nodTarget = Environment.getNixOnDroidInitPath(context)
+        val nodExists = try { Os.lstat(nodLink.absolutePath); true } catch (_: Exception) { false }
+        if (!nodExists) {
+            try { Os.symlink(nodTarget, nodLink.absolutePath) } catch (_: Exception) {}
+        }
     }
 
     /**
@@ -3093,8 +3290,13 @@ claude() {
         val defaults = """
             {
                 "vscodroid.layout.compactScreen": ${isCompactScreen()},
-                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.defaultProfile.linux": "nix-on-droid",
                 "terminal.integrated.profiles.linux": {
+                    "nix-on-droid": {
+                        "path": "${Environment.getTerminalShellPath(context)}",
+                        "args": ["--init-file", "${Environment.getNixOnDroidInitPath(context)}"],
+                        "icon": "terminal-bash"
+                    },
                     "bash": {
                         "path": "${Environment.getTerminalShellPath(context)}",
                         "args": [],

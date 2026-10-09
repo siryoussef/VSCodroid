@@ -206,7 +206,8 @@ VSCodroid/
 │   │   │   │   ├── libldmusl.so          # musl loader (runs the Claude Code CLI)
 │   │   │   │   ├── libclaude-launch.so   # Starts that CLI with the shim preloaded
 │   │   │   │   ├── libseccomp-shim.so    # Answers the syscall Android 13/14 refuse
-│   │   │   │   └── libexec-trampoline.so # Starts a toolchain command (SELinux)
+│   │   │   │   ├── libexec-trampoline.so # Starts a toolchain command (SELinux)
+│   │   │   │   └── libproot.so           # PRoot (runs the Nix-on-Droid environment)
 │   │   │   └── res/                   # Android resources, layouts
 │   │   └── build.gradle.kts
 │   ├── toolchain_ruby/            # Ruby on-demand asset pack

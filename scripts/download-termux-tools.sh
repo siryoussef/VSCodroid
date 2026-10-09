@@ -65,6 +65,10 @@ REQUIRED_PACKAGES=(
     libicu
     libc++
     libsqlite
+    # PRoot and its dependencies for the Nix-on-Droid terminal environment
+    proot
+    libtalloc
+    libandroid-shmem
     # Not a component that ships: it carries usr/share/LICENSES, the shared
     # licence texts most of the packages above point their copyright symlink
     # at. Without it termux_copy_notices has nothing to resolve those links
@@ -102,6 +106,8 @@ get_sonames() {
         libicu)            echo "libicui18n.so.78 libicuuc.so.78 libicudata.so.78" ;;
         libc++)            echo "libc++_shared.so" ;;
         libsqlite)         echo "libsqlite3.so" ;;
+        libtalloc)         echo "libtalloc.so.2" ;;
+        libandroid-shmem)  echo "libandroid-shmem.so" ;;
         *)                 echo "" ;;
     esac
 }
@@ -114,6 +120,7 @@ LIB_PACKAGES=(
     libevent utf8proc libandroid-glob libedit ldns
     krb5 libresolv-wrapper
     c-ares libicu libc++ libsqlite
+    libtalloc libandroid-shmem
 )
 
 echo "=== Downloading Termux Tools (bash + git + tmux + make + ssh) ==="
@@ -224,6 +231,17 @@ if [ -f "$SSH_KEYGEN_BIN" ]; then
 else
     echo "  ERROR: ssh-keygen binary not found at $SSH_KEYGEN_BIN"
     find "extracted/openssh" -name "ssh-keygen" -type f 2>/dev/null || true
+    exit 1
+fi
+
+# proot (runs the Nix-on-Droid rootless environment)
+PROOT_BIN="extracted/proot/data/data/com.termux/files/usr/bin/proot"
+if [ -f "$PROOT_BIN" ]; then
+    cp "$PROOT_BIN" "$JNILIBS_DIR/libproot.so"
+    echo "  libproot.so ($(du -sh "$JNILIBS_DIR/libproot.so" | cut -f1))"
+else
+    echo "  ERROR: proot binary not found at $PROOT_BIN"
+    find "extracted/proot" -name "proot" -type f 2>/dev/null || true
     exit 1
 fi
 
@@ -677,7 +695,7 @@ echo "=== Verifying placed binaries ==="
 # verifying earlier would be verifying a directory still being built.
 
 JNILIBS_BINARIES=(libbash.so libgit.so libgit-remote-curl.so libtmux.so libmake.so
-                  libssh.so libssh-keygen.so)
+                  libssh.so libssh-keygen.so libproot.so)
 
 verify_failures=0
 verify_checked=0

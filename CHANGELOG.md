@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Integrated Nix-on-Droid as the default terminal environment in VS Code. Terminals launch into a rootless Nix-on-Droid PRoot session by default, with access to Nix package management and the vast nixpkgs collection, while retaining standard Bash as an alternative profile.
 - The screen shown when the development server will not start now shows the last lines of the server log, including how each attempt ended, and offers Copy Report. The reason was written only to a file the editor could reach, and the editor was what had failed to open.
 - Opening a phone folder such as Documents with File > Open Folder or Add Folder to Workspace now warns, once per folder each time the editor server starts, that Android hides the files other apps saved there, and offers **VSCodroid: Open Folder from Device**, which shows them.
 - **VSCodroid: Open Folder from Device** is offered in the remote indicator menu and the empty Explorer as well as the Command Palette.

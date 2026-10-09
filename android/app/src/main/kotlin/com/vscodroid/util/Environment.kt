@@ -527,6 +527,40 @@ object Environment {
     fun getTerminalShellPath(context: Context): String =
         "${context.filesDir}/usr/bin/bash"
 
+    // -- Nix-on-Droid environment --
+
+    /**
+     * Root directory of the Nix-on-Droid installation inside VSCodroid's sandbox.
+     * Contains `nix/store/`, `var/`, `etc/`, `tmp/`, `.l2s/`.
+     */
+    fun getNixDir(context: Context): String =
+        "${context.filesDir}/nix"
+
+    /**
+     * The launcher script that starts the Nix-on-Droid proot session.
+     * Passed to bash via `--init-file` in the default terminal profile.
+     */
+    fun getNixOnDroidInitPath(context: Context): String =
+        "${context.filesDir}/usr/bin/nix-on-droid-login"
+
+    /**
+     * Path to the bootstrap script that downloads and installs the Nix store.
+     */
+    fun getNixBootstrapScriptPath(context: Context): String =
+        "${context.filesDir}/usr/bin/vscodroid-nix-bootstrap"
+
+    /**
+     * Path to the bundled PRoot binary in nativeLibraryDir.
+     */
+    fun getProotPath(context: Context): String =
+        "${context.applicationInfo.nativeLibraryDir}/libproot.so"
+
+    /**
+     * Checks whether the Nix store is initialized.
+     */
+    fun isNixInitialized(context: Context): Boolean =
+        File(getNixDir(context), "nix/store").isDirectory || File(getNixDir(context), "store").isDirectory
+
     fun getGitPath(context: Context): String =
         "${context.applicationInfo.nativeLibraryDir}/libgit.so"
 
