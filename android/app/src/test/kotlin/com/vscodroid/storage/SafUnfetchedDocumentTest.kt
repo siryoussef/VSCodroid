@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
 import android.os.FileObserver
+import android.os.SystemClock
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.vscodroid.util.Logger
@@ -18,13 +19,21 @@ import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * What happens to a device document the sync could not read, when a local file
@@ -221,6 +230,252 @@ class SafUnfetchedDocumentTest {
         deliver(FileObserver.DELETE or isDirFlag, relativePath)
     }
 
+    @Test
+    fun `a save checking an old device stamp cannot cross a reopen that could not read the document`() {
+        reopenDuringOutboundStampCheck(FileObserver.MODIFY)
+    }
+
+    @Test
+    fun `a delete checking an old device stamp cannot cross a reopen that could not read the document`() {
+        reopenDuringOutboundStampCheck(FileObserver.DELETE)
+    }
+
+    @Test
+    fun `a create reusing a document cannot cross a reopen that could not read it`() {
+        reopenDuringOutboundStampCheck(FileObserver.CREATE)
+    }
+
+    @Test
+    fun `a replacement engine reopening the mirror invalidates an older engine save`() {
+        reopenDuringOutboundStampCheck(FileObserver.MODIFY, replacementEngine = true)
+    }
+
+    @Test
+    fun `a replacement engine reopening the mirror invalidates an older engine delete`() {
+        reopenDuringOutboundStampCheck(FileObserver.DELETE, replacementEngine = true)
+    }
+
+    @Test
+    fun `opening another mirror leaves a valid save able to finish`() {
+        reopenDuringOutboundStampCheck(FileObserver.MODIFY, anotherMirror = true)
+    }
+
+    @Test
+    fun `opening another mirror leaves a valid delete able to finish`() {
+        reopenDuringOutboundStampCheck(FileObserver.DELETE, anotherMirror = true)
+    }
+
+    private fun reopenDuringOutboundStampCheck(
+        event: Int,
+        replacementEngine: Boolean = false,
+        anotherMirror: Boolean = false,
+    ) {
+        val contents = AtomicReference("device contents")
+        val modified = AtomicLong(1_700_000_000_000)
+        val readable = AtomicBoolean(true)
+        val exists = AtomicBoolean(true)
+        val writes = AtomicInteger()
+        val deletes = AtomicInteger()
+        val failedReads = AtomicInteger()
+        val checkingStamp = CountDownLatch(1)
+        val releaseStamp = CountDownLatch(1)
+        val pauseNextStamp = AtomicBoolean(true)
+        val failure = AtomicReference<Throwable?>()
+        var outbound: Thread? = null
+        deviceTree(mapOf("root" to listOf(Entry("notes.md"))))
+        every { resolver.query(any(), any(), any(), any(), any()) } answers {
+            val document = firstArg<Uri>() === uris["doc:notes.md"]
+            val stamp = modified.get()
+            val size = contents.get().toByteArray().size.toLong()
+            if (document) {
+                // A provider cursor is a snapshot, even if its binder call returns later.
+                if (Thread.currentThread() === outbound && pauseNextStamp.compareAndSet(true, false)) {
+                    checkingStamp.countDown()
+                    check(releaseStamp.await(10, TimeUnit.SECONDS)) { "the stamp query was not released" }
+                }
+                mockk<Cursor>(relaxed = true) {
+                    every { moveToFirst() } returns true
+                    every { getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED) } returns 0
+                    every { getColumnIndex(DocumentsContract.Document.COLUMN_SIZE) } returns 1
+                    every { isNull(any<Int>()) } returns false
+                    every { getLong(0) } returns stamp
+                    every { getLong(1) } returns size
+                }
+            } else {
+                cursorOver(if (exists.get()) listOf(Entry("notes.md", size)) else emptyList()).also {
+                    every { it.getLong(4) } returns stamp
+                }
+            }
+        }
+        every { resolver.openInputStream(any()) } answers {
+            if (!readable.get()) {
+                failedReads.incrementAndGet()
+                throw IOException("the provider refused the read")
+            }
+            ByteArrayInputStream(contents.get().toByteArray())
+        }
+        every { resolver.openOutputStream(any(), "wt") } answers {
+            writes.incrementAndGet()
+            contents.set("")
+            object : ByteArrayOutputStream() {
+                override fun close() {
+                    contents.set(toString("UTF-8"))
+                    super.close()
+                }
+            }
+        }
+        every { DocumentsContract.deleteDocument(any(), any()) } answers {
+            deletes.incrementAndGet()
+            exists.set(false)
+            true
+        }
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        val local = File(mirror, "notes.md")
+        assertEquals("device contents", local.readText())
+        if (event == FileObserver.DELETE) assertTrue(local.delete())
+        else local.writeText("saved in the editor")
+        engine.handleMirrorEvent(event, local, mirror, treeUri)
+        val drain = Thread {
+            try {
+                engine.runWriteBackLoop { false }
+            } catch (error: Throwable) {
+                failure.set(error)
+            }
+        }
+        outbound = drain
+        drain.start()
+        try {
+            assertTrue(checkingStamp.await(5, TimeUnit.SECONDS), "the outbound job never checked its device stamp")
+            if (!anotherMirror) {
+                contents.set("changed by another app")
+                modified.set(System.currentTimeMillis() + 60_000)
+                readable.set(false)
+            }
+            val openingEngine = if (replacementEngine) SafSyncEngine(context) else engine
+            val openingMirror = if (anotherMirror) File(filesDir, "other-mirror").apply { mkdirs() } else mirror
+
+            runBlocking { openingEngine.initialSync(treeUri, openingMirror) { _, _ -> } }
+
+            if (anotherMirror) assertEquals("device contents", File(openingMirror, "notes.md").readText())
+            else assertTrue(failedReads.get() > 0, "the reopen did not try to read the changed document")
+        } finally {
+            releaseStamp.countDown()
+            drain.join(5_000)
+        }
+        assertFalse(drain.isAlive, "the outbound job did not finish after its provider call returned")
+        failure.get()?.let { throw AssertionError("the outbound job failed", it) }
+        if (anotherMirror) {
+            assertEquals(event != FileObserver.DELETE, exists.get(), "opening another mirror cancelled the valid delete")
+            assertEquals(if (event == FileObserver.DELETE) "device contents" else "saved in the editor", contents.get())
+            assertEquals(if (event == FileObserver.DELETE) 0 else 1, writes.get())
+            assertEquals(if (event == FileObserver.DELETE) 1 else 0, deletes.get())
+            return
+        }
+        assertTrue(exists.get(), "the queued delete removed a document the reopen could not read")
+        assertEquals("changed by another app", contents.get(), "the queued save replaced unread device bytes")
+        assertEquals(0, writes.get(), "the stale save opened the device document with truncation")
+        assertEquals(0, deletes.get(), "the stale delete reached the provider")
+        if (event == FileObserver.CREATE) {
+            verify(exactly = 0) { DocumentsContract.createDocument(any(), any(), any(), any()) }
+        }
+    }
+
+    @Test
+    fun `a reopen refuses promptly while a provider write is admitted and succeeds after it finishes`() {
+        reopenDuringOutboundMutation(FileObserver.MODIFY)
+    }
+
+    @Test
+    fun `a reopen refuses promptly while a provider delete is admitted and succeeds after it finishes`() {
+        reopenDuringOutboundMutation(FileObserver.DELETE)
+    }
+
+    private fun reopenDuringOutboundMutation(event: Int) {
+        val contents = AtomicReference("device contents")
+        val exists = AtomicBoolean(true)
+        val writes = AtomicInteger()
+        val deletes = AtomicInteger()
+        val insideMutation = CountDownLatch(1)
+        val releaseMutation = CountDownLatch(1)
+        val reopenFinished = CountDownLatch(1)
+        val drainFailure = AtomicReference<Throwable?>()
+        val reopenFailure = AtomicReference<Throwable?>()
+        deviceTree(mapOf("root" to listOf(Entry("notes.md"))))
+        every { resolver.query(any(), any(), any(), any(), any()) } answers {
+            cursorOver(if (exists.get()) listOf(Entry("notes.md", contents.get().toByteArray().size.toLong())) else emptyList())
+        }
+        every { resolver.openInputStream(any()) } answers { ByteArrayInputStream(contents.get().toByteArray()) }
+        every { resolver.openOutputStream(any(), "wt") } answers {
+            insideMutation.countDown()
+            check(releaseMutation.await(10, TimeUnit.SECONDS)) { "the provider write was not released" }
+            writes.incrementAndGet()
+            contents.set("")
+            object : ByteArrayOutputStream() {
+                override fun close() {
+                    contents.set(toString("UTF-8"))
+                    super.close()
+                }
+            }
+        }
+        every { DocumentsContract.deleteDocument(any(), any()) } answers {
+            insideMutation.countDown()
+            check(releaseMutation.await(10, TimeUnit.SECONDS)) { "the provider delete was not released" }
+            deletes.incrementAndGet()
+            exists.set(false)
+            true
+        }
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        val local = File(mirror, "notes.md")
+        assertEquals("device contents", local.readText())
+        if (event == FileObserver.DELETE) assertTrue(local.delete())
+        else local.writeText("saved in the editor")
+        engine.handleMirrorEvent(event, local, mirror, treeUri)
+        val drain = Thread {
+            try {
+                engine.runWriteBackLoop { false }
+            } catch (error: Throwable) {
+                drainFailure.set(error)
+            }
+        }
+        val reopening = Thread {
+            try {
+                runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+            } catch (error: Throwable) {
+                reopenFailure.set(error)
+            } finally {
+                reopenFinished.countDown()
+            }
+        }
+        drain.start()
+        try {
+            assertTrue(insideMutation.await(5, TimeUnit.SECONDS), "the outbound job never entered its provider mutation")
+            reopening.start()
+
+            assertTrue(reopenFinished.await(5, TimeUnit.SECONDS), "the reopen waited for the blocked provider mutation")
+
+            assertTrue(reopenFailure.get() is IOException, "the busy reopen did not report an IOException: ${reopenFailure.get()}")
+            assertEquals(1L, releaseMutation.count, "the provider mutation was released before the reopen returned")
+            assertTrue(exists.get())
+            assertEquals("device contents", contents.get())
+        } finally {
+            releaseMutation.countDown()
+            drain.join(5_000)
+            reopening.join(5_000)
+        }
+        assertFalse(drain.isAlive, "the provider mutation did not finish after being released")
+        assertFalse(reopening.isAlive, "the reopen did not return")
+        drainFailure.get()?.let { throw AssertionError("the outbound job failed", it) }
+        assertEquals(event != FileObserver.DELETE, exists.get())
+        assertEquals(if (event == FileObserver.DELETE) "device contents" else "saved in the editor", contents.get())
+        assertEquals(if (event == FileObserver.DELETE) 0 else 1, writes.get())
+        assertEquals(if (event == FileObserver.DELETE) 1 else 0, deletes.get())
+
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+
+        assertEquals(event != FileObserver.DELETE, exists.get(), "the completed mutation was not retained after reopening")
+        assertEquals(if (event == FileObserver.DELETE) "device contents" else "saved in the editor", contents.get())
+    }
+
     /**
      * The same skip, one level up. The document is never in the mirror, so the editor
      * shows its directory as empty; the user deletes the directory; and the delete
@@ -228,6 +483,48 @@ class SafUnfetchedDocumentTest {
      * the archive with it. The file guard tests the directory's own path, which no
      * skip ever records, so nothing stood in the way.
      */
+    @Test
+    fun `a null root listing protects a stale mirror file after the provider recovers`() {
+        deviceHolding("notes.txt", 15)
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        every { resolver.query(any(), any(), any(), any(), any()) } returns null
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        deviceHolding("notes.txt", 18)
+        var device = "UNREAD DEVICE EDIT"
+        every { resolver.openOutputStream(any(), "wt") } answers {
+            object : ByteArrayOutputStream() {
+                override fun close() { device = toString("UTF-8") }
+            }
+        }
+        File(mirror, "notes.txt").writeText("NEW LOCAL EDIT")
+
+        deliver(FileObserver.MODIFY, "notes.txt")
+
+        assertEquals("UNREAD DEVICE EDIT", device)
+    }
+
+    @Test
+    fun `a failed child listing protects saves below that directory`() {
+        val tree = mapOf(
+            "root" to listOf(Entry("docs", isDirectory = true)),
+            "doc:docs" to listOf(Entry("notes.md")),
+        )
+        deviceTree(tree, unenumerable = setOf("doc:docs"))
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        deviceTree(tree)
+        var device = "UNREAD DEVICE EDIT"
+        every { resolver.openOutputStream(any(), "wt") } answers {
+            object : ByteArrayOutputStream() {
+                override fun close() { device = toString("UTF-8") }
+            }
+        }
+        File(mirror, "docs/notes.md").writeText("NEW LOCAL EDIT")
+
+        deliver(FileObserver.MODIFY, "docs/notes.md")
+
+        assertEquals("UNREAD DEVICE EDIT", device)
+    }
+
     @Test
     fun `a directory holding a document the sync never read is kept on the device`() {
         val kept = mutableListOf<String>()
@@ -563,6 +860,269 @@ class SafUnfetchedDocumentTest {
 
         verify(exactly = 0) { DocumentsContract.deleteDocument(any(), any()) }
         assertEquals(listOf("archive"), kept, "the rename left the declined file's memory at the old name")
+    }
+
+    /**
+     * `mv [from] [to]` in the editor, as the observer reports it: the old name leaves, the
+     * new one arrives, and the write-back that renames the device's own document runs.
+     *
+     * The new name is not on disk while its event is delivered, because a directory that
+     * exists is watched through a `FileObserver`, which a JVM test cannot build; the move
+     * on disk follows, for the cases that go on to save into the directory.
+     */
+    private fun renameDirectory(from: String, to: String) {
+        engine.handleMirrorEvent(FileObserver.MOVED_FROM or isDirFlag, File(mirror, from), mirror, treeUri)
+        deliver(FileObserver.MOVED_TO or isDirFlag, to)
+        File(mirror, from).renameTo(File(mirror, to))
+    }
+
+    /**
+     * `docs`, which the rename cases move, beside `docs2`, whose name starts the same as
+     * text and is not below it as a path. Each holds one file by a name of its own, because
+     * a document id here is its name.
+     */
+    private val docsBesideDocs2 = mapOf(
+        "root" to listOf(Entry("docs", isDirectory = true), Entry("docs2", isDirectory = true)),
+        "doc:docs" to listOf(Entry("notes.md")),
+        "doc:docs2" to listOf(Entry("other.md")),
+    )
+
+    /** The same device folder once `docs` has been renamed to `archive` on it. */
+    private val archiveBesideDocs2 = mapOf(
+        "root" to listOf(Entry("archive", isDirectory = true), Entry("docs2", isDirectory = true)),
+        "doc:archive" to listOf(Entry("notes.md")),
+        "doc:docs2" to listOf(Entry("other.md")),
+    )
+
+    /** The `.device-` copies in [directory] of the mirror, by name, with what each holds. */
+    private fun deviceCopiesIn(directory: String): List<String> =
+        File(mirror, directory).listFiles()!!
+            .filter { it.name.contains(SafSyncEngine.DEVICE_COPY_SUFFIX) }
+            .map { it.readText() }
+
+    /**
+     * What the device last reported for each document is what the guard on a save asks
+     * about another app's edit, and it is kept by mirror path. A path with no entry fails
+     * open, so a file below a renamed directory was saved over a newer device copy with no
+     * copy of it kept, until the next open filled the entry in again.
+     *
+     * The sibling beside it is the other half: its name begins with the renamed one's, and
+     * an entry moved because of that would leave its own file unguarded instead.
+     */
+    @Test
+    fun `a file below a renamed directory still keeps another app's edit when it is saved`() {
+        deviceTree(docsBesideDocs2)
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        renameDirectory("docs", "archive")
+        deviceTree(archiveBesideDocs2)
+        changedByAnotherApp("doc:notes.md")
+        changedByAnotherApp("doc:other.md")
+
+        File(mirror, "archive/notes.md").writeText("typed in the editor")
+        deliver(FileObserver.MODIFY, "archive/notes.md")
+        File(mirror, "docs2/other.md").writeText("typed in the editor too")
+        deliver(FileObserver.MODIFY, "docs2/other.md")
+
+        assertEquals(
+            listOf("changed by another app"), deviceCopiesIn("archive"),
+            "a save below the renamed directory went over another app's edit unguarded",
+        )
+        assertEquals(
+            listOf("changed by another app"), deviceCopiesIn("docs2"),
+            "a directory whose name only starts like the renamed one lost its guard",
+        )
+    }
+
+    /** The same entry for a delete, which declines rather than keeps a copy. */
+    @Test
+    fun `a file below a renamed directory is still kept on the device when another app changed it`() {
+        val kept = mutableListOf<String>()
+        engine.onKeptOnDevice = { file, _, _ -> kept.add(file.name) }
+        deviceTree(docsBesideDocs2)
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        renameDirectory("docs", "archive")
+        deviceTree(archiveBesideDocs2)
+        changedByAnotherApp("doc:notes.md")
+        changedByAnotherApp("doc:other.md")
+
+        File(mirror, "archive/notes.md").delete()
+        deliver(FileObserver.DELETE, "archive/notes.md")
+        File(mirror, "docs2/other.md").delete()
+        deliver(FileObserver.DELETE, "docs2/other.md")
+
+        verify(exactly = 0) { DocumentsContract.deleteDocument(any(), any()) }
+        assertEquals(
+            listOf("notes.md", "other.md"), kept,
+            "a delete went over another app's edit of a file below a renamed directory, or " +
+                "of one below a directory whose name only starts like it",
+        )
+    }
+
+    /**
+     * The unread documents of a directory, and of a sibling whose name starts the same:
+     * both are kept on the device when deleted after the rename, which fails for the
+     * sibling if the match is by text rather than by path.
+     */
+    @Test
+    fun `a renamed directory keeps its unread documents and not a sibling's by name alone`() {
+        val kept = mutableListOf<String>()
+        engine.onKeptOnDevice = { file, _, _ -> kept.add(file.name) }
+        val unread = SafSyncEngine.MAX_FILE_SIZE + 1
+        deviceTree(
+            mapOf(
+                "root" to listOf(Entry("docs", isDirectory = true), Entry("docs2", isDirectory = true)),
+                "doc:docs" to listOf(Entry("big.zip", size = unread)),
+                "doc:docs2" to listOf(Entry("big2.zip", size = unread)),
+            )
+        )
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        renameDirectory("docs", "archive")
+        deviceTree(
+            mapOf(
+                "root" to listOf(Entry("archive", isDirectory = true), Entry("docs2", isDirectory = true)),
+                "doc:archive" to listOf(Entry("big.zip", size = unread)),
+                "doc:docs2" to listOf(Entry("big2.zip", size = unread)),
+            )
+        )
+
+        deleteDirectory("archive")
+        deleteDirectory("docs2")
+
+        verify(exactly = 0) { DocumentsContract.deleteDocument(any(), any()) }
+        assertEquals(listOf("archive", "docs2"), kept)
+    }
+
+    /**
+     * The files whose delete was declined, below a renamed directory and below a sibling
+     * whose name starts the same: `rm -r` of either is kept on the device after the
+     * rename, which fails for the sibling if the match is by text rather than by path.
+     */
+    @Test
+    fun `a renamed directory keeps its declined deletes and not a sibling's by name alone`() {
+        val kept = mutableListOf<String>()
+        engine.onKeptOnDevice = { file, _, _ -> kept.add(file.name) }
+        deviceTree(docsBesideDocs2)
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        changedByAnotherApp("doc:notes.md")
+        changedByAnotherApp("doc:other.md")
+        File(mirror, "docs/notes.md").delete()
+        deliver(FileObserver.DELETE, "docs/notes.md")
+        File(mirror, "docs2/other.md").delete()
+        deliver(FileObserver.DELETE, "docs2/other.md")
+        assertEquals(listOf("notes.md", "other.md"), kept, "setup: the deletes went through")
+        renameDirectory("docs", "archive")
+        deviceTree(archiveBesideDocs2)
+        kept.clear()
+
+        deleteDirectory("archive")
+        deleteDirectory("docs2")
+
+        verify(exactly = 0) { DocumentsContract.deleteDocument(any(), any()) }
+        assertEquals(listOf("archive", "docs2"), kept)
+    }
+
+    /**
+     * A directory the open could not enumerate is recorded by its own path, since nothing
+     * below it was read to be recorded. The memory followed only what lay below the
+     * renamed path, so the directory's own entry stayed at the old name and `rm -r` of the
+     * new one sent `deleteDocument` for documents the editor never had.
+     */
+    @Test
+    fun `a renamed directory whose enumeration failed is still kept on the device`() {
+        val kept = mutableListOf<String>()
+        engine.onKeptOnDevice = { file, _, _ -> kept.add(file.name) }
+        deviceTree(docsHoldingNotes, unenumerable = setOf("doc:docs"))
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        renameDirectory("docs", "archive")
+        deviceTree(
+            mapOf(
+                "root" to listOf(Entry("archive", isDirectory = true)),
+                "doc:archive" to listOf(Entry("notes.md")),
+            )
+        )
+
+        deleteDirectory("archive")
+
+        verify(exactly = 0) { DocumentsContract.deleteDocument(any(), any()) }
+        assertEquals(listOf("archive"), kept, "the rename left the directory's own entry at the old name")
+    }
+
+    /**
+     * A save held back names its document by the URI it had, which on a provider whose ids
+     * are paths is dead once the directory is renamed, or is whatever is made at the old
+     * path next. It ends with the rename, so no try is made at the old path or at the new,
+     * and the file waits for its next save, which its entry now guards.
+     *
+     * The old path is made again, because that is where a hold left behind would be tried:
+     * one left at a path nothing is at is dropped by the next try anyway. The sibling's
+     * hold is the control, and it is tried.
+     */
+    @Test
+    fun `a save held back below a renamed directory ends there and a sibling's does not`() {
+        var clock = 0L
+        mockkStatic(SystemClock::class)
+        every { SystemClock.elapsedRealtime() } answers { clock }
+        val lost = mutableListOf<String>()
+        engine.onWriteBackFailed = { lost.add(it.name) }
+        deviceTree(docsBesideDocs2)
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        // A set-aside needs a fetch, which the floor refuses: another app's edit that cannot
+        // be kept holds the save back.
+        engine.usableSpaceOf = { SafSyncEngine.OPEN_SPACE_FLOOR_BYTES - 1 }
+        changedByAnotherApp("doc:notes.md")
+        changedByAnotherApp("doc:other.md")
+        File(mirror, "docs/notes.md").writeText("typed in the editor")
+        deliver(FileObserver.MODIFY, "docs/notes.md")
+        File(mirror, "docs2/other.md").writeText("typed in the editor too")
+        deliver(FileObserver.MODIFY, "docs2/other.md")
+        assertEquals(listOf("notes.md", "other.md"), lost, "setup: the saves were not held back")
+        renameDirectory("docs", "archive")
+        File(mirror, "docs").mkdirs()
+        File(mirror, "docs/notes.md").writeText("made again at the old name")
+        clock += SafSyncEngine.HELD_BACK_RETRY_FIRST_MS
+        val watching = WatchSession(mirror)
+
+        // One try per call, and one that is made puts its hold back with a longer wait.
+        var tried = 0
+        while (tried < 5 && engine.retryHeldBack(watching)) tried++
+
+        assertEquals(
+            1, tried,
+            "a save held back below the renamed directory was tried, at the old name or the new",
+        )
+    }
+
+    /**
+     * What the user guide says of a held save whose directory is renamed: the trying ends,
+     * and the file's next save keeps the other app's version beside it, which the entry
+     * that moved with the rename still asks about. The floor is lifted by then, so the
+     * other app's version can be copied.
+     */
+    @Test
+    fun `the next save of a file whose held save ended with a rename keeps the other app's version`() {
+        var clock = 0L
+        mockkStatic(SystemClock::class)
+        every { SystemClock.elapsedRealtime() } answers { clock }
+        deviceTree(docsBesideDocs2)
+        runBlocking { engine.initialSync(treeUri, mirror) { _, _ -> } }
+        engine.usableSpaceOf = { SafSyncEngine.OPEN_SPACE_FLOOR_BYTES - 1 }
+        changedByAnotherApp("doc:notes.md")
+        File(mirror, "docs/notes.md").writeText("typed in the editor")
+        deliver(FileObserver.MODIFY, "docs/notes.md")
+        renameDirectory("docs", "archive")
+        deviceTree(archiveBesideDocs2)
+        changedByAnotherApp("doc:notes.md")
+        engine.usableSpaceOf = { Long.MAX_VALUE }
+        clock += SafSyncEngine.HELD_BACK_RETRY_FIRST_MS
+        assertFalse(engine.retryHeldBack(WatchSession(mirror)), "setup: a held save was tried")
+
+        File(mirror, "archive/notes.md").writeText("typed again in the editor")
+        deliver(FileObserver.MODIFY, "archive/notes.md")
+
+        assertEquals(
+            listOf("changed by another app"), deviceCopiesIn("archive"),
+            "the save after the rename went over another app's version with no copy kept",
+        )
     }
 
     /**

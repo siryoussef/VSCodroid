@@ -82,14 +82,16 @@ jobs:
   build-release:
     name: Build Release
     runs-on: ubuntu-latest
-    # Two Gradle release builds plus ~360 MB of toolchain downloads. Raised
-    # before the first tag rather than after one times out at 90%.
+    # Two Gradle release builds plus ~450 MB of toolchain downloads, ~90 MB of
+    # them the C/C++ toolchain's. Raised before the first tag rather than after
+    # one times out at 90%.
     timeout-minutes: 90
     env:
-      # The addons, the glibc shim, the trampoline and the Claude shim in a
-      # release are compiled with this one. build.yml pins the same version, and
-      # check-build-steps.py fails the two drifting apart: an APK built against
-      # another NDK is a different binary from the one every gate ran over.
+      # The addons, the glibc shim, the exec interceptor, the trampoline and
+      # the Claude shim in a release are compiled with this one. build.yml pins
+      # the same version, and check-build-steps.py fails the two drifting
+      # apart: an APK built against another NDK is a different binary from the
+      # one every gate ran over.
       NDK_VERSION: "27.2.12479018"
 
     steps:
@@ -283,9 +285,13 @@ jobs:
         run: |
           sdkmanager "ndk;${NDK_VERSION}" --channel=0
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          # The Android plugin ignores ANDROID_NDK_HOME and picks its own default
+          # NDK, which this image may not have: it then packaged every library
+          # unstripped and extracted no symbols. See ndkVersion in app/build.gradle.kts.
+          echo "VSCODROID_NDK_VERSION=${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
 
@@ -423,6 +429,7 @@ jobs:
           node scripts/test-arrow-edge-guard.js
           node scripts/test-modifier-release.js
           node scripts/test-composing-enter.js
+          node scripts/test-leave-curtain.js
           node scripts/test-keyboard-guard.js
           node scripts/test-serve-network.js
           node scripts/test-welcome.js
@@ -546,6 +553,15 @@ jobs:
             --scan android/app/src/main/assets/vscode-reh \
             --scan android/app/src/main/assets/extensions
 
+      # The library the terminals preload so a program under the app's own
+      # storage, which SELinux will not execve, starts through the system
+      # linker instead. Built from termux-exec's source with the repository's
+      # patch, into assets/usr/lib, so after the wipe like the shim.
+      - name: Build the exec interceptor
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: bash scripts/build-termux-exec.sh
+
       # The one binary this repository compiles for the app itself. It is what
       # puts a downloaded toolchain's commands on PATH as real files, so anything
       # that resolves a bare name and execve's the result -- an extension
@@ -651,6 +667,7 @@ jobs:
         run: |
           bash scripts/download-ruby.sh
           bash scripts/download-java.sh
+          bash scripts/download-cpp.sh
 
       # The unit suite ran on every pull request and on no tag, which put the
       # published build on the wrong side of it. Before the signing keystore is
@@ -849,11 +866,12 @@ jobs:
       # entries that are not integrity-checked.
       #
       # What AGP finds is read back out of the finished bundle and joined
-      # with the glibc shim, the one native library compiled here, which
-      # ships as an asset AGP never sees and now carries the GNU build-id
-      # its link stamps for the console's pairing. The result is a
-      # standalone zip for the console's manual upload; the bundle itself
-      # leaves this step untouched.
+      # with the glibc shim, which ships as an asset AGP never sees and now
+      # carries the GNU build-id its link stamps for the console's pairing.
+      # The exec interceptor, also compiled here into the assets, is not in
+      # the zip: only programs a terminal starts load it, never the app's
+      # own process. The result is a standalone zip for the console's
+      # manual upload; the bundle itself leaves this step untouched.
       - name: Package the native debug symbols
         run: |
           set -euxo pipefail
@@ -865,9 +883,12 @@ jobs:
           rm -f "$OUT"
           unzip -o -q "$BUNDLE" "$META/*" -d pulled/ || test $? -eq 11
           mkdir -p symbols/arm64-v8a
-          if [ -d "pulled/$META/arm64-v8a" ]; then
-            cp pulled/"$META"/arm64-v8a/*.sym symbols/arm64-v8a/ 2>/dev/null || true
-          fi
+          # At least one symbol table has to come from the bundle: several of the
+          # bundled libraries still carry one, and an empty pull means the Android
+          # plugin could not find the NDK it strips with, which until now left
+          # the zip with the shim alone and the build green.
+          ls pulled/"$META"/arm64-v8a/*.sym >/dev/null
+          cp pulled/"$META"/arm64-v8a/*.sym symbols/arm64-v8a/
           cp android/app/src/main/assets/usr/lib/libglibc-shim.so \
              symbols/arm64-v8a/libglibc-shim.so.sym
           ( cd symbols && zip -qr "$GITHUB_WORKSPACE/$OUT" arm64-v8a )
@@ -993,7 +1014,7 @@ jobs:
       # one is for reading R8's decisions on a failing run; it is not this one and
       # cannot stand in for it.
       - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-artifacts
           # Catches an upload that carries nothing at all, which is the case the
@@ -1055,7 +1076,7 @@ jobs:
           persist-credentials: false
 
       - name: Download build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-artifacts
           path: artifacts

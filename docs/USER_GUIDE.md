@@ -26,7 +26,7 @@ A practical guide to using VSCodroid -- the full VS Code IDE running natively on
 
 1. **Install**. Download from the [Play Store](#) or [GitHub Releases](https://github.com/rmyndharis/VSCodroid/releases). The core download is roughly 270 MB, and you need about 738 MB free for the extraction that follows.
 2. **Binary extraction** -- On first launch, VSCodroid extracts bundled tools (Node.js, Python, Git, Bash, and others) to internal storage. About 603 MB lands on disk, unpacked one file at a time behind a progress bar, so allow minutes rather than seconds on a slower device. The ~738 MB above is that payload plus the working room setup insists on before it will start. It happens on the first launch and again after every app update, because the extraction is keyed on the app version rather than on what is already unpacked. An update needs far less free space than a fresh install (the app credits what it already holds, so roughly 230 MB rather than 738 MB), but it does re-copy the files and it does take minutes. A first run that is interrupted and retried on the same version is the one case that does not start over: files already the right size are left alone.
-3. **Language Picker** -- A prompt asks "What do you code in?" with options for Ruby and Java. It comes back at each launch until you answer it with Continue or Skip, and your answer is not final: touch and hold the app icon and pick **Manage toolchains** to add or remove them later. Whatever you select downloads there on the setup screen, one at a time; a download that fails is skipped and the rest continue. Skip goes straight to the editor.
+3. **Language Picker** -- A prompt asks "What do you code in?" with options for Ruby, Java and C/C++. It comes back at each launch until you answer it with Continue or Skip, and your answer is not final: touch and hold the app icon and pick **Manage toolchains** to add or remove them later. Whatever you select downloads there on the setup screen, one at a time; a download that fails is skipped and the rest continue. Skip goes straight to the editor.
 4. **Ready** -- The VS Code editor loads with terminal, file explorer, and all bundled tools available immediately.
 
 ### Default File Locations
@@ -113,9 +113,12 @@ VSCodroid is VS Code. If you have used VS Code on desktop, everything works the 
   copied then either, saves of the file wait inside VSCodroid until an open can.
   If it reports none, opening it again leaves both versions as they are, as
   above: VSCodroid goes on trying the save, and after VSCodroid restarts, your
-  next save of the file sends it. In either kind of folder, an open that finds
-  that version reported as over 50 MB keeps saves of the file inside VSCodroid
-  until an open finds it smaller.
+  next save of the file sends it. Renaming the folder that holds the file, in
+  the editor, ends the trying: your next save of the file then keeps the other
+  app's version beside yours as a copy, as above, and where the folder reports
+  file times opening the folder tries the save too. In either kind of folder, an
+  open that finds that version reported as over 50 MB keeps saves of the file
+  inside VSCodroid until an open finds it smaller.
 - A file of a device folder that you delete in the editor is deleted in the
   device folder too, unless the device folder's version is one VSCodroid has not
   read: another app may have changed it since you opened the folder or last
@@ -123,10 +126,10 @@ VSCodroid is VS Code. If you have used VS Code on desktop, everything works the 
   read it. Such a file is kept in the device folder, and so is a folder holding
   it that you delete from the terminal; a notice says so, and the file comes
   back into the editor the next time you open the folder.
-- An open that cannot list the folder holding a file leaves VSCodroid nothing
-  to check that file against until an open can: a save held back before that
-  open is no longer tried, and your next save or delete of the file replaces or
-  removes the device folder's version without keeping a copy.
+- If opening a folder cannot list it or one of its subdirectories, saves and
+  deletes of existing device documents under that directory are held back.
+  Your edits stay inside VSCodroid until you reopen the folder successfully
+  and save again; the unread device version is kept.
 - The Explorer and the title bar show a device folder under its own name. A
   folder opened in an earlier version is shown under a twelve-character code
   such as `8e440ff38c8e`, the name of its copy, and offers to reopen under its
@@ -171,7 +174,7 @@ To edit settings as JSON, use the Command Palette: `Preferences: Open User Setti
 
 ### Text Size
 
-**VSCodroid: UI Scale**, in the Command Palette, sets the size of the whole interface: the side bar, tabs, menus, status bar, panels and editor together. It offers 100%, 110%, 125% and 150%, but only the sizes that keep the page at least 320 CSS pixels wide, so most phones go up to 110% or 125% and tablets to 150%. The size is kept when the window reloads and when the app restarts. A size that does not take effect on your device is put back to 100%, and the command says so when you pick it.
+**VSCodroid: UI Scale**, in the Command Palette, sets the size of the whole interface: the side bar, tabs, menus, status bar, panels and editor together. It offers 100%, 110%, 125% and 150%, but only the sizes that keep the page at least 320 CSS pixels wide, so most phones go up to 110% or 125% and tablets to 150%. The room is checked against the screen when you choose a size and when the page loads, not when the window is resized, so entering split-screen at a large size can leave the page narrower than that until you choose a smaller one. The side bar closing by itself on a small screen goes by the screen's size and does not follow this size; set `vscodroid.layout.autoHideSideBar` to `on` to have it close at any size. The size is kept when the window reloads and when the app restarts. A size that does not take effect on your device is put back to 100%, and the command says so when you pick it.
 
 To change the text in one place only, use the `editor.fontSize` and `terminal.integrated.fontSize` settings, which are remembered. **Increase Editor Font Size** in the Command Palette also works, but it is not bound to a key and it resets when the window reloads.
 
@@ -194,12 +197,21 @@ the remote indicator at the left end of the status bar and choose
 **VSCodroid: Toggle Extra Key Row**, or run it from the Command Palette. The row
 stays hidden, across restarts, until you run the command again.
 
+The row also steps away by itself once you type a character on a hardware keyboard,
+and comes back when a finger leaves the screen: a tap on the editor or the end of a
+scroll. Running the command above does not bring it back at once: the first run
+hides the row until you run it again, and the second shows it. A mouse click or a
+touchpad does not bring it back, and nothing typed on the soft keyboard or on the
+row takes it away. If the hardware keyboard is disconnected the row comes back at
+once.
+
 How many pages there are depends on how wide your phone is. The row divides its width
 evenly among the keys on a page, so on a narrower screen it carries fewer keys per
-page and spreads them over more: five pages on a 411dp phone and wider, six at
-360dp, seven at 320dp. The keys and their order never change, only where the page
-breaks fall. The tables below are the five-page layout; on a narrower phone read
-them as one list that is cut in more places.
+page and spreads them over more: six pages on a 411dp phone and wider, seven at
+360dp, eight at 320dp. The keys and their order never change, only where the page
+breaks fall, and the last page, the quick actions, is always one page of its own.
+The tables below are the six-page layout; on a narrower phone read pages 1 to 5
+as one list that is cut in more places.
 
 **Page 1, essential coding keys:**
 
@@ -226,9 +238,30 @@ you and leaves the cursor between the two.
 **Page 5, the rest of the function keys and navigation:** `F9` through `F12`,
 `Home`, `End`, `PgUp`, `PgDn`
 
-The last two pages are the only place a touch user can reach any of those keys: no
+Pages 4 and 5 are the only place a touch user can reach any of those keys: no
 other page carries a function key, and the trackpad sends arrows only. Any
 shortcut the editor or an extension binds to one is a tap away.
+
+**Page 6, quick actions:** one tap for the commands you would otherwise reach with
+Ctrl and a letter. Each key sends the shortcut itself, so it works with nothing
+latched, and a Ctrl, Alt or Shift lit on page 1 is cleared by the tap and does not
+change it. On a label, `^` is Ctrl.
+
+| Key | Sends | What it does |
+|-----|-------|--------------|
+| `F1` | F1 | Opens the Command Palette |
+| `^P` | Ctrl+P | Quick Open: go to a file by name |
+| `` ^` `` | Ctrl+`` ` `` | Opens and focuses the terminal, or hides the panel when it already has focus |
+| `^B` | Ctrl+B | Shows or hides the side bar |
+| `^J` | Ctrl+J | Shows or hides the bottom panel |
+| `^S` | Ctrl+S | Saves the file |
+
+These keys go to the editor itself and not to whichever box has the focus, so they
+work with the terminal focused too: `^B` hides the side bar and `^S` saves the open
+file from the terminal as from the editor, and neither is typed into the shell. Ctrl
+latched on page 1 and then `B` or `S` on the soft keyboard is a different thing: it
+goes to the box that has the focus, so in a terminal it reaches the shell, which
+takes Ctrl+S as a request to pause its output until Ctrl+Q.
 
 #### The trackpad
 
@@ -294,7 +327,7 @@ Ctrl+Backspace arrive as chords: Ctrl+Enter opens a line below without splitting
 the one you are on, rather than typing a plain newline.
 
 Under a screen reader, the dots below the row are one item that reads "Key page 1
-of 5", with any latched modifier named after it ("Key page 1 of 5, ctrl+shift
+of 6", with any latched modifier named after it ("Key page 1 of 6, ctrl+shift
 held"). It is spoken again each time you swipe to another page, which is the only
 announcement that the keys under your finger have changed.
 
@@ -378,6 +411,68 @@ npm init -y
 npm install express
 node index.js
 ```
+
+### What Runs in the Terminal
+
+Android does not let an app start a program straight out of its own storage,
+and that is where everything you build, clone or install ends up. The terminal
+starts each such program through the system's own program loader on your
+behalf, as the Termux build on Google Play does, so from a terminal these all
+work:
+
+- a program built for Android (with the NDK), run as `./a.out`
+- a script with a `#!` line, run by its own path. That includes a Git hook in a
+  repository you cloned, which fires on your first commit there, as it would on
+  a desktop
+- a command that pip or npm installed, inside or outside a virtual environment
+
+That covers the app's own storage, and nothing else. An install from before
+1.2.0 whose projects folder is still on shared storage, under
+`Android/data/com.vscodroid/files/projects` (see [Storage](#storage)), keeps
+that folder, and a program or a Git hook stored there still cannot run. A
+folder under `~` that is not `~/projects` is under the app's own storage on
+such an install, and this works there.
+
+A task the editor runs from `tasks.json` is covered too, with one distinction.
+A `"type": "shell"` task runs in a shell, so anything it names works as it
+would in a terminal. A `"type": "process"` task starts its command directly,
+and that command itself still has to be a bundled tool, a toolchain command by
+name, or a system program: an absolute path to a program under the app's
+storage fails as the command, with or without the setting. What the command
+starts then reaches your files, so a `python3` task can run `./a.out` or a
+script by its path.
+
+What it does not reach is a program an extension starts on its own, without a
+terminal: an extension's own copy of Git, or a language server. Those still
+cannot start a file under the app's storage, which is why this guide keeps its
+`python3 -m` advice for that case. A terminal an extension opens carries it
+(measured with the JavaScript Debug Terminal on API 33 and 36 emulators,
+2026-09-23), since the setting applies to every terminal the editor creates,
+unless the extension asks for a strict environment of its own.
+
+Two limits show. A `#!` line of the form `#!/usr/bin/env -S ...` fails with
+`env: Unknown option`, because the system's `env` has no `-S`; write
+`#!/usr/bin/env node` or name the interpreter directly. And while such a
+program runs, the terminal tab shows `linker64` as its name, because the system
+loader is what is running it. For the same reason a program that asks the
+system for its own path is told the loader's, so a tool that finds its files
+that way may need to be told where it is.
+
+To switch it off, open Settings, choose the tab labelled **Remote
+[127.0.0.1:13337]** (the port can differ on your device) and, under
+`terminal.integrated.env.linux`, replace the value of `LD_PRELOAD` with
+`null`. That tab edits the settings file this app owns, which is where
+VSCodroid writes the entry; the next terminal you open runs without it, and
+your choice survives relaunches. The same `null` in the **User** tab, which is
+the one Settings opens on, does not switch it off: the app's own file outranks
+it.
+
+A preload of your own belongs in that tab too, for the same reason: an
+`LD_PRELOAD` you set in the **User** tab is replaced by the app's entry. To
+keep both, put your library after the path VSCodroid wrote, separated by a
+colon. VSCodroid leaves a value like that as you wrote it, so if a backup
+brings it to another Android user, such as a work profile, terminals there
+fail to start until you correct the paths in it.
 
 ---
 
@@ -613,6 +708,10 @@ git checkout feature-x        # Switch to branch
 
 VS Code's built-in Source Control panel (Ctrl+Shift+G) also works for staging, committing, and viewing diffs.
 
+`git submodule` commands run, and print a few lines reading
+`git: 'sh-i18n--envsubst' is not a git command` on the way. They are harmless:
+that helper is not bundled, and the command completes without it.
+
 ### SSH Configuration
 
 VSCodroid creates a default SSH config at `~/.ssh/config` on first launch with sensible defaults:
@@ -652,9 +751,11 @@ npm init -y
 npm install express
 ```
 
-The React steps avoid `npm create vite@latest` and the template's own `vite` scripts,
-which stop with `bad interpreter: Permission denied`; [npm and npx](#npm-and-npx) says
-why. The template's `lint` and `preview` scripts need the same change:
+The React steps start create-vite and Vite with `node`, which works with or without the
+terminal's program loader. In a terminal `npm create vite@latest` and the template's own
+`vite` scripts run as well; where the loader does not reach they stop with
+`bad interpreter: Permission denied`, and [npm and npx](#npm-and-npx) says why. There the
+template's `lint` and `preview` scripts need the same change:
 
 ```bash
 npm pkg set scripts.lint="node node_modules/oxlint/bin/oxlint" scripts.preview="node node_modules/vite/bin/vite.js preview"
@@ -665,8 +766,7 @@ npm pkg set scripts.lint="node node_modules/oxlint/bin/oxlint" scripts.preview="
 When running a local dev server (Vite, Next.js, Express, Flask, etc.), you can preview it
 **inside the editor**, in a tab beside your code:
 
-1. Start the dev server in the terminal, from a `dev` script that runs it through
-   `node` as the React steps above set it up:
+1. Start the dev server in the terminal:
    ```bash
    npm run dev
    # Output: Local: http://localhost:5173/
@@ -720,15 +820,19 @@ npm install express            # Install a package
 npm run start                  # Run a script from package.json
 ```
 
-Starting a package's program by name does not work: `npx <tool>`, `npm create` and
-`npm init <initializer>`, and a `package.json` script such as `"dev": "vite"`, all exit
-with status 126 and `Permission denied`; when the program is a JavaScript file the
-message reads `/usr/bin/env: bad interpreter: Permission denied`. npm starts those
-through the file in `node_modules/.bin`, and Android refuses to execute a file inside
-the app's storage. Run the program's JavaScript file with `node` instead, such as
-`node node_modules/vite/bin/vite.js` for `vite`; the package's `package.json` names that
-file under `bin`. A script that starts with `node`, like `"start": "node server.js"`,
-works as it is.
+In a terminal, a package's program starts by name as it does on a desktop: `npx <tool>`,
+`npm create` and `npm init <initializer>`, and a `package.json` script such as
+`"dev": "vite"`. npm starts each through the file in `node_modules/.bin`, which Android
+refuses to execute because it is inside the app's storage, so the terminal hands it to
+the system's program loader (see [What Runs in the Terminal](#what-runs-in-the-terminal)).
+
+Where that loader does not reach, such as a program an extension starts on its own, or a
+terminal where it is switched off, the same starts exit with status 126 and
+`Permission denied`; when the program is a JavaScript file the message reads
+`/usr/bin/env: bad interpreter: Permission denied`. There, run the program's JavaScript
+file with `node` instead, such as `node node_modules/vite/bin/vite.js` for `vite`; the
+package's `package.json` names that file under `bin`. A script that starts with `node`,
+like `"start": "node server.js"`, works as it is.
 
 npm uses `--prefer-offline` by default to speed up installs by using cached packages when available.
 
@@ -744,7 +848,7 @@ python3 app.py
 
 ### Package Compatibility
 
-Some npm packages require C/C++ compilation and will not install because there is no compiler on the device. Use these alternatives:
+Some npm packages require C/C++ compilation and will not install unless the [C/C++ toolchain](#c-and-c) is installed, and a native npm build has not been tried against them even then. Use these alternatives:
 
 | Package | Alternative | Notes |
 |---------|------------|-------|
@@ -810,7 +914,7 @@ process.
   run on the machine you are sitting at, and that companion cannot run here.
   Debug the server side, and view the page in the preview tab or the device
   browser.
-- **Everything else.** Ruby and Java are toolchains, not debuggers, and neither
+- **Everything else.** Ruby, Java and C/C++ are toolchains, not debuggers, and none
   ships an adapter. A debug extension written in JavaScript and published on
   Open VSX may work; one that ships a program compiled for desktop Linux will
   not (see [Extensions That Bundle a Compiled
@@ -827,7 +931,12 @@ Beyond the bundled tools (Node.js, Python, Git, Bash), VSCodroid offers addition
 | Language | Download Size | Installed Size | Includes |
 |----------|--------------|----------------|----------|
 | Ruby 4.0 | 10.5 MB | 39 MB | ruby, gem, irb, bundler, rake |
-| Java 17 (OpenJDK) | 56.5 MB | 156 MB | java, javac, jar, jshell |
+| Java 17 (OpenJDK) | 56.5 MB | 160 MB | java, javac, jar, jshell |
+| C/C++ (clang 21) | 74 MB | 260 MB | cc, c++, gcc, g++, clang, clang++, ld, ar, ranlib, nm, strip, objdump, objcopy, readelf, size, and the C and C++ headers |
+
+The C/C++ toolchain is the largest. Installing a toolchain holds the unpacked copy and the
+installed copy at once, so the install asks for roughly twice the installed size free while
+it runs, which for this one is about 570 MB.
 
 ### Installing During First Run
 
@@ -868,9 +977,67 @@ javac Main.java
 java Main
 ```
 
-A command a gem installs (`rubocop`, `rails`) starts working once you switch away from
-VSCodroid and back, in a new terminal, the same delay as a command pip installs; see
-[Python Command-Line Tools](#python-command-line-tools).
+A command a gem installs (`rubocop`, `rails`) lands in a folder that is not on
+the terminal's `PATH`, so by its bare name it is reachable after you switch away
+from VSCodroid and back, or on the next launch, which is when the app lists the
+commands installed so far; by its full path under `$GEM_HOME/bin` it runs in a
+terminal the moment `gem install` finishes (see
+[What Runs in the Terminal](#what-runs-in-the-terminal)). A program an extension
+starts on its own cannot reach it either way; run `ruby -S rubocop` there.
+
+### C and C++
+
+The **C/C++** toolchain installs clang and lld with the headers they need. In a terminal:
+
+```bash
+cat > hello.c <<'EOF'
+#include <stdio.h>
+int main(void) { puts("hello from C"); return 0; }
+EOF
+cc hello.c -o hello && ./hello
+
+cat > hello.cpp <<'EOF'
+#include <iostream>
+int main() { std::cout << "hello from C++\n"; }
+EOF
+c++ hello.cpp -o hello_cpp && ./hello_cpp
+```
+
+`cc`, `gcc` and `clang` compile C; `c++`, `g++` and `clang++` compile C++. All six are clang
+under different names, and `gcc` and `g++` are not GNU's compilers. `make`, which is already
+bundled, finds `cc` and `g++` by its own defaults, so a plain `Makefile` works. `ld` is lld, and
+`ar`, `ranlib`, `nm`, `strip`, `objdump`, `objcopy`, `readelf` and `size` are LLVM's.
+
+**It needs the terminal's exec interceptor.** The compiler starts its linker, and then you start
+the program it built, and both are files in the app's own storage that Android will not run
+directly. The terminal starts them for you through the system's program loader, as described in
+[What Runs in the Terminal](#what-runs-in-the-terminal), and this toolchain has no other way to
+start. So it does not work:
+
+- in a terminal where `LD_PRELOAD` has been set to `null`, the switch that section describes,
+  where `cc` answers `Permission denied`;
+- when an extension starts a compiler itself, which does not go through a terminal;
+- as the command of a `"type": "process"` task, which is started directly. Use a
+  `"type": "shell"` task instead.
+
+A program you compile runs from a terminal the same way, and a C++ program finds its runtime
+library (`libc++_shared.so`) in the app's own library directory.
+
+**pip.** A package that has no ready-made build and carries a C extension is compiled on the
+device when pip installs it, with the build tools pip fetches for it, so the first one needs a
+network. Python's build settings name `aarch64-linux-android-clang`, which this toolchain
+provides under that name, and it puts Python's headers where they are looked for, in
+`usr/include/python3.14`. A large package can take a long time on a phone, and some packages
+need libraries that are not here.
+
+**What is not included:** `clangd`, `clang-format` and the other clang tools; `libclang`; CMake
+and Ninja; OpenMP (`-fopenmp`); the sanitizers (`-fsanitize=`); a debugger; and `<spawn.h>`, so a
+program that calls `posix_spawn` does not compile. Programs are built for the phone, as arm64
+Android programs, and for nothing else.
+
+`make -j4` starts four compilers at once, each a process Android counts against its phantom
+process limit (see [Android Phantom Process Limit](#android-phantom-process-limit)); `make -j2` is
+the sensible ceiling on a phone.
 
 ### Removing Toolchains
 
@@ -972,7 +1139,7 @@ In the file tree:
 
 ### Native npm Packages
 
-Packages that require C/C++ compilation (node-gyp) fail on VSCodroid because there is no C compiler on the device. This affects packages like `better-sqlite3`, `bcrypt`, `sharp`, `canvas`, and `node-sass`. Pure JavaScript or WASM alternatives exist for most of them (see the [Web Development](#package-compatibility) section).
+Packages that require C/C++ compilation (node-gyp) fail on VSCodroid unless the [C/C++ toolchain](#c-and-c) is installed, because there is no C compiler on the device otherwise. This affects packages like `better-sqlite3`, `bcrypt`, `sharp`, `canvas`, and `node-sass`. With the toolchain installed the compiler is there, but node-gyp also fetches Node's headers over the network and none of these builds has been tried here, so the alternatives remain the reliable route. Pure JavaScript or WASM alternatives exist for most of them (see the [Web Development](#package-compatibility) section).
 
 ### Python Packages Written in C
 
@@ -982,7 +1149,8 @@ compiled part is different, for two reasons, in the order pip hits them.
 There is often no wheel to download. This interpreter reports its platform as
 `android-24-arm64_v8a`, which is what it is, and PyPI carries no Android wheels
 for most compiled packages. Pip then falls back to building from source, and
-there is no C compiler on the device, so that fails too. The error you see names
+without the [C/C++ toolchain](#c-and-c) there is no C compiler on the device, so that fails
+too. With it installed, pip compiles the extension on the device. The error you see names
 the missing build tool rather than either of these, which is why it reads as
 something you could install your way out of.
 
@@ -1028,44 +1196,22 @@ in [Dev Server Preview](#dev-server-preview) above.
 ### Python Command-Line Tools
 
 Some packages install a command as well as a module: `pytest`, `black`, `httpie`,
-`cowsay`. These work, with one delay worth knowing about: a command you have just
-installed starts working once you switch away from VSCodroid and back, not straight
-away.
+`cowsay`. In a terminal they work the moment pip finishes, inside or outside a
+virtual environment. Android does not let an app run a program straight out of
+its own storage, and what pip writes is exactly that: a short text file starting
+with `#!` and the path to the interpreter. So the terminal starts each one
+through the system's own program loader on your behalf (see [What Runs in the
+Terminal](#what-runs-in-the-terminal)). You will not notice, except that a
+program asking the system for its own path is told the loader's.
 
-```
-$ pip install cowsay
-$ cowsay -t hi
-bash: /data/.../usr/bin/cowsay: /data/.../usr/bin/python3: bad interpreter: Permission denied
-```
-
-Switch to another app or the home screen, come back, open a new terminal, and the
-same line works. A terminal that already tried the command remembers where it
-failed; `hash -r` there makes it look again.
-
-The delay comes from how the command is made to run at all. Android does not let
-an app run a program out of its own storage, and what pip writes is exactly that:
-a short text file starting with `#!` and the path to the interpreter. VSCodroid
-keeps a small table of what each command means and starts the interpreter itself,
-which is allowed. That table is rebuilt when the app starts and when it comes back to the
-front, so a command installed while you are in the editor is not in it yet, and until then you get the message
-above. It names `python3`, so it reads as a broken Python; Python is fine, and the
-interpreter it names runs perfectly when you call it yourself. It is the one-line
-launcher that cannot start.
-
-If you would rather not wait, run the module. It does the same thing and works the
-moment pip finishes:
+A program an extension starts on its own does not go through the terminal, and
+there the launcher pip wrote cannot start. The module form works everywhere, so
+use it in any script an extension runs for you:
 
 ```bash
 python3 -m pytest
 python3 -m black .
-python3 -m cowsay -t hi
 ```
-
-A command installed inside a virtual environment is the exception: it does not
-start at all, and switching away and back does not change that. pip writes it into
-the environment's own `bin` directory, and VSCodroid fills its table only from
-`usr/bin`, where pip puts a command outside a virtual environment. With the
-environment active, run the module instead, for example `python -m pytest`.
 
 `pip` itself is the same shape and is already handled: `pip` and `pip3` are set up
 as shell functions that call `python3 -m pip`, so they work in the terminal
@@ -1145,32 +1291,49 @@ does not need that particular binary works. What needs it does not run.
 This is not every package with a native part. Rollup, Rolldown, Lightning CSS and
 oxlint publish Android builds that Node loads as libraries, and npm installs them,
 which is why VSCodroid reports the platform it actually is rather than pretending
-to be Linux. esbuild publishes one too, but as a program: its install step runs
-it, Android refuses to execute it from the app's storage, and the install fails.
-Vite 8 does not need esbuild; Vite 7 and older depend on it and do not install.
+to be Linux. esbuild publishes one too, but as a program, and its install step
+runs it. Without the terminal's program loader (see
+[What Runs in the Terminal](#what-runs-in-the-terminal)) Android refuses to execute
+it from the app's storage and the install fails; whether esbuild runs through the
+loader has not been measured. Vite 8 does not need esbuild; Vite 7 and older
+depend on it.
 
 ### Toolchains Must Be Started by Name
 
 Android refuses to execute any file inside an app's data directory, which is where
-installed toolchains live. VSCodroid works around it by handing the file to the
-system loader instead, and it does that two ways: a bash function per command, and
-a small program on `PATH` that every other kind of start finds.
+installed toolchains live, so every start of one is handed to the system loader
+instead. In a terminal, and in a task the editor runs, the terminal does that for
+any program the shell or the task's command goes on to start (see
+[What Runs in the Terminal](#what-runs-in-the-terminal)).
+Everywhere else VSCodroid does it two ways: a bash function per command, and a
+small program on `PATH` that every other kind of start finds.
 
 So a toolchain command works when it is started by its bare name, whoever starts
 it: typing `ruby` in a terminal, `bash -c`, `sh -c`, a `make` recipe, an npm
 lifecycle script, a VS Code task of either kind, and a process an extension or a
 language server starts directly.
 
-What still fails is a start that names a path instead of a command:
+What still fails is a start that names a path instead of a command, when the
+start comes from an extension or is the command of a `"type": "process"` task
+itself:
 
 - an absolute path such as `$JAVA_HOME/bin/java`, which is not a `PATH` lookup at all
 - a toolchain that forks its own helper by absolute path, which is what the JDK's `lib/jspawnhelper` does
 - `jshell` started anywhere but bash, because its default engine starts a second JVM that way; the terminal's `jshell` runs your snippets in its own JVM instead
 - a script under the app's storage run by its own path: Android refuses the script file itself, before its `#!` line is ever read. Run it as `ruby script.rb` instead
 
+In a terminal, in a shell task, and in whatever a process task's command starts,
+an absolute path, a forked helper and a script run by its own path all work.
+
 `npm` and `npx` are reached the same two ways: a bash function in a shell, and a
 program on `PATH` for everything else. So `sh -c 'npm -v'`, `timeout 60 npm install`
 and a tool that runs `npm install` itself all find them, as the terminal does.
+
+The [C/C++ toolchain](#c-and-c) is the one exception, and it is the other way round. It gets
+no bash function and no program on `PATH`, because starting a compiler through the loader by
+hand makes clang believe it is the loader and look for its headers in the wrong place. It is
+found on `PATH` like any program and started by the terminal's own exec, so it works in a
+terminal and in a `"type": "shell"` task and in nothing that starts a process without one.
 
 ### Android Phantom Process Limit
 
@@ -1247,7 +1410,10 @@ lay some structures out differently, so an add-on can start and then misbehave.
 
 The second wall is that Android refuses to execute any file inside an app's own
 storage, which is exactly where an installed extension lives, so even a
-correctly built program has to be handed to a loader by something else.
+correctly built program has to be handed to a loader by something else. In a
+terminal that is done for you (see [What Runs in the
+Terminal](#what-runs-in-the-terminal)), but an extension starts its program
+itself, outside any terminal, and that start is not covered.
 VSCodroid asks the marketplace for the musl build wherever an extension
 publishes one, which is what makes that route possible at all, but the extension
 itself then has to offer a setting that lets its command be prefixed. Almost
@@ -1292,7 +1458,8 @@ VSCodroid's own screens follow the same list: the setup progress, the toolchain
 picker, and the notifications and dialogs the app puts on screen are translated
 into those thirteen languages too. On Android 13 and later they can be set
 separately from the phone, under Settings, Apps, VSCodroid, Language, and the
-editor follows that choice as well.
+editor follows that choice as well. Android 11 and 12 have no such setting, so
+there the app and the editor follow the phone's language.
 
 VSCodroid's own commands, settings and the Get Started walkthrough are
 translated into the same thirteen languages. An extension you install from Open
@@ -1316,7 +1483,7 @@ VS Code's web client runs as a single window. You cannot open multiple VS Code w
 
 ### Storage
 
-Core installation extracts approximately 603 MB to internal storage. With both toolchains installed, expect around 800 MB. Setup needs about 738 MB free before it starts, which is more than it ends up occupying because extraction needs room to work. If it refuses, it asks for the shortfall it measured rather than the whole figure, so a device part of the way through is asked only for what is missing. Beyond it, keep a few hundred MB free for node_modules, build artifacts and caches.
+Core installation extracts approximately 603 MB to internal storage. With Ruby and Java installed, expect around 800 MB, and about 1,060 MB with C/C++ as well. Setup needs about 738 MB free before it starts, which is more than it ends up occupying because extraction needs room to work. If it refuses, it asks for the shortfall it measured rather than the whole figure, so a device part of the way through is asked only for what is missing. Beyond it, keep a few hundred MB free for node_modules, build artifacts and caches.
 
 ---
 
@@ -1402,7 +1569,7 @@ If `npm install` fails with errors:
 
 ### Python: Installed, and Then Something Fails
 
-- **`bad interpreter: Permission denied`** after installing a package that brings a command with it (`pytest`, `black`, `httpie`). Switch away from VSCodroid and back, then use a new terminal, and the command works; to use it without waiting, run it as a module: `python3 -m pytest`. A command installed inside a virtual environment never starts, however often you come back to the app; run it as a module there too, for example `python -m pytest`. See [Python Command-Line Tools](#python-command-line-tools) for why the message names `python3` when Python is not the problem.
+- **`bad interpreter: Permission denied`** from a command pip installed (`pytest`, `black`, `httpie`) when something other than a terminal or a task starts it, such as an extension running it on its own. Run it as a module there, `python3 -m pytest`, which works everywhere. In a terminal the command itself works the moment pip finishes; the same message there means the terminal's program loader is switched off, so check `terminal.integrated.env.linux` in the Remote settings tab (see [What Runs in the Terminal](#what-runs-in-the-terminal)). The message names `python3` because the one-line launcher pip wrote could not start, not because Python is broken.
 - **`Format Document` does nothing in a `.py` file** and the status bar sticks on "Running black". That is the formatter a marketplace search finds, which needs black installed separately (`pip install black`) and says nothing when it is missing. Opening a Python file offers you one that needs no pip step; see [The Python Formatter Is Not in Search Results](#the-python-formatter-is-not-in-search-results).
 - **`ZoneInfoNotFoundError`** from `zoneinfo`, `pandas` or anything that resolves a named time zone. `pip install tzdata` and it works from then on; see [Time Zones In Python](#time-zones-in-python).
 - **`ModuleNotFoundError: No module named 'tkinter'`** (or `'turtle'`), including from a package built on them such as `customtkinter`. Neither is included, and pip cannot add them: `pip install tkinter` finds no such package, and `pip install tk` installs an unrelated one. To show graphics, write a PNG or an SVG and keep it open in a preview, or serve a page and open it in the browser; see [Python Packages Written in C](#python-packages-written-in-c).

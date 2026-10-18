@@ -63,10 +63,13 @@ data class StartupNotice(val message: String, val terminal: Boolean)
  * report to the scope rather than acting on the watchdog thread.
  */
 // InlinedApi: FOREGROUND_SERVICE_TYPE_SPECIAL_USE is an int constant that the
-// compiler inlines, so no field is looked up at run time and API 33 cannot fail
-// on it. It is passed to ServiceCompat.startForeground, which is what decides
-// whether the platform is told a type at all. The manifest declares the same
-// type, and both permissions it needs are held.
+// compiler inlines, so no field is looked up at run time and no release below 34
+// can fail on it. It is passed to ServiceCompat.startForeground, which is what
+// decides whether the platform is told a type at all: androidx.core 1.19.0
+// masks the type with 0xFF from API 29 to 33 (read from its bytecode), so on
+// Android 11 to 13 `specialUse` becomes 0 and the platform is told none, a value
+// the manifest's declared type always contains. The manifest declares the type
+// for every release, and the permissions it names are held where they exist.
 @SuppressLint("InlinedApi")
 class NodeService : Service() {
 
@@ -990,7 +993,7 @@ class NodeService : Service() {
      */
     private fun setupProcessCallbacks() {
         processManager.onServerCrashed = { exitCode ->
-            serviceScope.launch { handleServerCrash(exitCode) }
+            dispatchServerCrash(serviceScope, processManager, exitCode, ::handleServerCrash)
         }
     }
 
@@ -998,7 +1001,7 @@ class NodeService : Service() {
      * Decides what a crashed server gets: another attempt after a growing pause,
      * or the terminal state.
      */
-    private suspend fun handleServerCrash(exitCode: Int) {
+    private suspend fun handleServerCrash(exitCode: Int, epoch: Int) {
         // A report that arrives after the service has stopped describes a process
         // the user asked to be rid of. The watchdog suppresses the expected exit
         // itself, but a crash already on its way to this scope when Stop was
@@ -1026,7 +1029,9 @@ class NodeService : Service() {
             endFailureEpisode()
         }
         Logger.w(tag, "Server crashed (exit=$exitCode), restart #${restartCount + 1}")
-        chargeHeapOverride(exitCode)
+        chargeHeapOverride(exitCode, epoch)
+        // Preference I/O can outlive a stop and a replacement start.
+        if (processManager.serverEpoch != epoch) return
         // The decision and the waiting both live in [retryOrGiveUp], shared with
         // the start path. Recomputing `crashAction` there costs nothing, and it
         // is what lets the refill above count: the `action` read at the top of
@@ -1070,7 +1075,7 @@ class NodeService : Service() {
     // lint says nothing if it becomes apply(), which turns the latch off
     // silently.
     // `the count is committed rather than deferred` is the guard.
-    private suspend fun chargeHeapOverride(exitCode: Int) {
+    private suspend fun chargeHeapOverride(exitCode: Int, epoch: Int) {
         if (!processManager.heapOverrideInEffect()) return
         // Both touches of the preference file hop to IO; the decision between them
         // and the message after them do not. `getSharedPreferences` blocks the
@@ -1113,6 +1118,8 @@ class NodeService : Service() {
             prefs.edit(commit = true) { putInt(PREF_HEAP_KILLS, charged) }
             charged
         } ?: return
+        // Keep the death recorded without publishing its warning into a replacement run.
+        if (processManager.serverEpoch != epoch) return
         Logger.w(tag, "Server killed with a user heap ceiling in effect ($after of $HEAP_OVERRIDE_KILL_BUDGET)")
         if (heapOverrideSuspended(after)) {
             reportStartupNotice(getString(R.string.heap_override_suspended))
@@ -1143,8 +1150,9 @@ class NodeService : Service() {
      *
      * The service deliberately does not stop itself here. Stopping is not what
      * makes the state visible, and staying alive is what lets the next
-     * `onStartCommand` recover in place, with the port and the connection token
-     * that the workbench's IndexedDB is already bound to.
+     * `onStartCommand` recover in place, with the port the workbench's IndexedDB
+     * is already bound to. The connection token is not kept: the next spawn
+     * replaces it.
      */
     private fun enterTerminalState() {
         Logger.e(tag, "Max restarts exceeded ($MAX_RESTARTS)")
@@ -1188,8 +1196,8 @@ class NodeService : Service() {
      *
      * The service deliberately does not stop itself. Stopping is not what makes
      * the state visible, and staying alive is what lets the next `onStartCommand`
-     * recover in place, with the port and the connection token that the
-     * workbench's IndexedDB is already bound to.
+     * recover in place, with the port the workbench's IndexedDB is already bound
+     * to. The connection token is not kept: the next spawn replaces it.
      *
      * Deliberately does **not** cancel the launch coroutine. [enterTerminalState]
      * does that first, and it is reached from a job that is not the launch job, so
@@ -1706,6 +1714,18 @@ internal fun crashAction(
     !serviceRunning -> CrashAction.IGNORE
     !hasRestartBudget(restartCount, maxRestarts) -> CrashAction.GIVE_UP
     else -> CrashAction.RESTART
+}
+
+internal fun dispatchServerCrash(
+    scope: CoroutineScope,
+    manager: ProcessManager,
+    exitCode: Int,
+    handle: suspend (Int, Int) -> Unit,
+) {
+    val epoch = manager.serverEpoch
+    scope.launch {
+        if (manager.serverEpoch == epoch) handle(exitCode, epoch)
+    }
 }
 
 /**

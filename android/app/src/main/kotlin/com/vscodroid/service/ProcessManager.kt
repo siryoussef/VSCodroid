@@ -115,6 +115,9 @@ class ProcessManager(private val context: Context) {
      */
     private val readinessEpoch = AtomicInteger(0)
 
+    /** Invalidates crash delivery when a stop or start supersedes the server. */
+    internal val serverEpoch: Int get() = readinessEpoch.get()
+
     /**
      * What makes the epoch check and the write it guards one step.
      *
@@ -1942,6 +1945,8 @@ class ProcessManager(private val context: Context) {
             try {
                 BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
                     reader.lineSequence().forEach { line ->
+                        // Not a message: see [isSettingsProbeMiss].
+                        if (isSettingsProbeMiss(line)) return@forEach
                         Logger.d(tag, "[node] $line")
                         serverLog.append(line)
                         // For the current process only. A restart replaces
@@ -1988,6 +1993,7 @@ class ProcessManager(private val context: Context) {
      * one that cannot bind.
      */
     private fun startAdoptionWatch() {
+        val epoch = readinessEpoch.get()
         watchdogThread = thread(name = "adopted-watch", isDaemon = true) {
             var misses = 0
             try {
@@ -2000,10 +2006,18 @@ class ProcessManager(private val context: Context) {
                     }
                     if (++misses < ADOPTED_WATCH_MISSES) continue
 
-                    clearReadiness()
-                    adopted = false
+                    val exitEpoch = synchronized(readinessLock) {
+                        if (isShuttingDown || !adopted || readinessEpoch.get() != epoch) return@thread
+                        clearReadiness()
+                        adopted = false
+                        readinessEpoch.get()
+                    }
                     Logger.w(tag, "Adopted server stopped answering; treating it as gone")
-                    onServerCrashed?.invoke(ADOPTED_SERVER_LOST)
+                    synchronized(readinessLock) {
+                        if (!isShuttingDown && readinessEpoch.get() == exitEpoch) {
+                            onServerCrashed?.invoke(ADOPTED_SERVER_LOST)
+                        }
+                    }
                     return@thread
                 }
             } catch (e: InterruptedException) {
@@ -2030,15 +2044,21 @@ class ProcessManager(private val context: Context) {
      * - anything else: unexpected crash
      */
     private fun startWatchdog() {
+        val process = serverProcess ?: return
+        val epoch = readinessEpoch.get()
         watchdogThread = thread(name = "node-watchdog", isDaemon = true) {
             try {
-                val exitCode = serverProcess?.waitFor() ?: return@thread
+                val exitCode = process.waitFor()
                 // Before the shutdown branch, not inside it. A process that has
                 // exited is not serving whatever the reason, and this is the only
                 // thread that learns about a crash -- leaving the flag set here
                 // would have the main thread navigate to a dead port for the
                 // whole restart, which is the case this flag exists for.
-                clearReadiness()
+                val exitEpoch = synchronized(readinessLock) {
+                    if (serverProcess !== process || readinessEpoch.get() != epoch) return@thread
+                    clearReadiness()
+                    readinessEpoch.get()
+                }
                 if (isShuttingDown) {
                     Logger.i(tag, "Server shut down gracefully")
                     return@thread
@@ -2065,7 +2085,12 @@ class ProcessManager(private val context: Context) {
                 // only its start summary there. Before the callback, so the page
                 // that callback may lead to already has the line.
                 serverLog.append(ending)
-                onServerCrashed?.invoke(exitCode)
+                // Logging can overlap a stop or restart, so delivery needs the same owner check.
+                synchronized(readinessLock) {
+                    if (!isShuttingDown && serverProcess === process && readinessEpoch.get() == exitEpoch) {
+                        onServerCrashed?.invoke(exitCode)
+                    }
+                }
             } catch (e: InterruptedException) {
                 Logger.d(tag, "Watchdog interrupted")
             }
@@ -2564,3 +2589,19 @@ internal fun heapKillsAfter(exitCode: Int, overrideRaisedCeiling: Boolean, curre
 
 /** `128 + SIGKILL`, as `assets/server.js` reports a signalled child. */
 internal const val HEAP_OVERRIDE_FATAL_EXIT = 137
+
+/**
+ * The line the editor server prints for each load of a folder that has no
+ * `.vscode/settings.json`: `File not found: <absolute path>`.
+ *
+ * The page reads that file before it paints, to start on the folder's theme, and a
+ * missing one is the usual case and answers 404, which the server's resource
+ * handler logs as an error line. It says nothing, and it is the one line of the
+ * server's output that names the folder the user opened, every load, so it
+ * filled the tail a bug report quotes with a path that report did not need. Only
+ * this probe's file is dropped: a `File not found` for anything else is still the
+ * server telling us something.
+ */
+internal fun isSettingsProbeMiss(line: String): Boolean =
+    line.startsWith("File not found: ") && line.endsWith("/.vscode/settings.json")
+

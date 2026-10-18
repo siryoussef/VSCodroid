@@ -173,6 +173,18 @@ LIBRARIES = {
     "liblzma.so": ("xz / liblzma", "LGPL-2.1, GPL-2.0, GPL-3.0"),
     "liblzma.so.5": ("xz / liblzma", "LGPL-2.1, GPL-2.0, GPL-3.0"),
     "libzstd.so.1": ("Zstandard", "GPL-2.0"),
+    # Built here from pinned upstream source by build-termux-exec.sh, so it is
+    # attributed as upstream's rather than as VSCodroid's. termux-exec-package
+    # is Apache-2.0 and the termux-core-package it links in statically is MIT,
+    # except where a file says otherwise, and three linked files do:
+    # termux-core's Canonicalize.c is GPL-2.0-only with the Classpath
+    # exception, its UnixSafeStrerror.c (Chromium) and termux-exec's
+    # ExecVariantsIntercept.c (UC Regents) are BSD-3-Clause. The script stops
+    # if that set of files changes.
+    "libtermux-exec.so": (
+        "termux-exec",
+        "Apache-2.0, MIT, BSD-3-Clause, GPL-2.0-only WITH Classpath-exception-2.0",
+    ),
     # --- permissive: attribution only ---
     "libnode.so": ("Node.js", "MIT"),
     "libpython.so": ("Python", "PSF-2.0"),
@@ -248,6 +260,24 @@ TOOLCHAIN_LIBRARIES = {
     "libandroid-shmem.so": ("libandroid-shmem", "BSD-3-Clause"),
     "libandroid-spawn.so": ("libandroid-spawn", "BSD-2-Clause"),
     "libffi.so": ("libffi", "MIT"),
+    # The C/C++ pack. LLVM is one component whichever package carries the file:
+    # libllvm ships libLLVM.so and clang ships libclang-cpp.so, from one source
+    # tree under one LICENSE.TXT, which is the only notice either carries. Termux
+    # declares "Apache-2.0, NCSA" for it; the exception to Apache-2.0 is the
+    # project's own and is recorded, so check-termux-licenses.py reports the one
+    # difference and fails on nothing.
+    "libLLVM.so": ("LLVM", "Apache-2.0 WITH LLVM-exception, NCSA"),
+    "libclang-cpp.so": ("LLVM", "Apache-2.0 WITH LLVM-exception, NCSA"),
+    "libxml2.so.16": ("libxml2", "MIT"),
+    # Three one-line linker scripts (`INPUT(-lc)`) from ndk-sysroot, so that
+    # -lpthread, -lrt and -lutil resolve. They are listed because the sweep in
+    # unlisted_toolchain_libs reads any .so name, not because they hold code.
+    # The package declares NCSA; the kernel interface headers it also ships are
+    # GPL-2.0 WITH Linux-syscall-note, which is a source offer for the files
+    # themselves and is recorded in LEGAL_NOTICES.md rather than on these three.
+    "libpthread.so": ("ndk-sysroot", "NCSA"),
+    "librt.so": ("ndk-sysroot", "NCSA"),
+    "libutil.so": ("ndk-sysroot", "NCSA"),
 }
 
 # Where each component's own notice reaches the device, as a path under
@@ -264,13 +294,17 @@ TOOLCHAIN_LIBRARIES = {
 #
 # Almost every entry is `usr/share/doc/<termux package>`, which is where
 # `termux_copy_notices` (scripts/lib/termux-packages.sh) places what upstream
-# ships. Two are not, and both are measured rather than assumed:
+# ships. Three are not, the first two measured rather than assumed:
 #
 #   * ripgrep arrives with the server tree rather than from Termux, and
 #     @vscode/ripgrep-universal already carries its LICENSE inside the package;
 #   * musl's Alpine .apk carries no notice at all (three entries: the loader,
 #     the libc symlink, the metadata), so download-musl-loader.sh places
-#     licenses/COPYRIGHT.musl instead.
+#     licenses/COPYRIGHT.musl instead;
+#   * termux-exec never passes through a package here: build-termux-exec.sh
+#     compiles it from the upstream tarballs and copies both LICENSE files, the
+#     texts they point at, the headers of the three files with terms of their
+#     own and Chromium's LICENSE into usr/share/doc/termux-exec itself.
 #
 # Keyed by component rather than by file, because that is the unit the two
 # attribution documents and LIBRARIES are written in, and because one package's
@@ -287,6 +321,7 @@ NOTICE_DIRS = {
     "xz / liblzma": "usr/share/doc/liblzma",
     "Zstandard": "usr/share/doc/zstd",
     "GMP": "usr/share/doc/libgmp",
+    "termux-exec": "usr/share/doc/termux-exec",
     # --- permissive ---
     "Node.js": "usr/share/doc/nodejs-lts",
     "Python": "usr/share/doc/python",
@@ -325,6 +360,11 @@ NOTICE_DIRS = {
     "libandroid-execinfo": "usr/share/doc/libandroid-execinfo",
     "libandroid-shmem": "usr/share/doc/libandroid-shmem",
     "libandroid-spawn": "usr/share/doc/libandroid-spawn",
+    # libllvm's package carries the project's LICENSE.TXT; clang, lld, llvm and
+    # libcompiler-rt carry no doc directory of their own.
+    "LLVM": "usr/share/doc/libllvm",
+    "libxml2": "usr/share/doc/libxml2",
+    "ndk-sysroot": "usr/share/doc/ndk-sysroot",
 }
 
 # The smallest thing that can be a notice, in bytes.

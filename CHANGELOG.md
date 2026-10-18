@@ -7,42 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Device-folder sync preserves local edits when a conflicting device copy cannot be kept and protects documents in directories the provider could not list.
+- Reopening a device folder rejects stale saves, deletes and watcher callbacks from the previous sync.
+- Reopening a device folder reclaims abandoned temporary downloads while retaining active copies and existing workspace files.
+- Opening a device folder during an active save or delete reports that the folder is busy instead of waiting for the provider.
+- A device-folder import refuses to install a copy if a parent directory is redirected by a symbolic link during the read.
+- Generating SSH keys preserves an existing private key whose public file is missing and explains how to recover the public key.
+- Toolchain installation rejects packs with a missing payload directory or required binary instead of marking them installed.
+- Cancelling a toolchain install no longer deletes a pack during a copy, and installation is refused while pack removal is pending.
+- Late callbacks from an old editor server no longer clear its replacement's readiness, restart it or display obsolete heap warnings.
+- Building from source retries interrupted bundled-extension extraction instead of accepting a partial extension directory as verified.
+
+## [1.5.0] - 2026-10-14
+
 ### Added
 
 - Chat can now use model providers of your own, with or without a GitHub account. The bundled Copilot extension hid every bring-your-own-key provider -- Custom Endpoint, OpenAI, Anthropic, Google, OpenRouter, Azure, xAI and Ollama -- behind a subscription check that only paid Copilot Individual accounts passed; Copilot Free, Business and users with no Copilot subscription at all could not add any. The check is lifted, so **Add Models...** in the model picker lists every provider for everyone, and a model server such as CLIProxyAPI, LiteLLM or Ollama can be used directly. The deprecated OpenAI-Compatible vendor is visible again too; it was hidden on stable builds, which is what this app is.
 - Integrated Nix-on-Droid as the default terminal environment in VS Code. Terminals launch into a rootless Nix-on-Droid PRoot session by default, with access to Nix package management and the vast nixpkgs collection, while retaining standard Bash as an alternative profile.
-- The screen shown when the development server will not start now shows the last lines of the server log, including how each attempt ended, and offers Copy Report. The reason was written only to a file the editor could reach, and the editor was what had failed to open.
-- Opening a phone folder such as Documents with File > Open Folder or Add Folder to Workspace now warns, once per folder each time the editor server starts, that Android hides the files other apps saved there, and offers **VSCodroid: Open Folder from Device**, which shows them.
+- The screen shown when the editor server could not be kept running now shows the last lines of the server log, including how each attempt that exited or failed to start ended, and offers Copy Report. The reason was written only to a file the editor could reach, and the editor was what had failed to open.
+- Opening a phone folder such as Documents with File > Open Folder or Add Folder to Workspace now warns, once per folder each time the editor server starts, that Android hides the files other apps saved there, and offers **VSCodroid: Open Folder from Device**, which shows them; Don't Show Again silences it for that folder.
 - **VSCodroid: Open Folder from Device** is offered in the remote indicator menu and the empty Explorer as well as the Command Palette.
 - **VSCodroid: Copy Bug Report** opens the bug report in an editor, to check before copying it into an issue.
 - Bug reports list the app's recent exits as Android recorded them, such as an ANR or a low-memory kill, and each renderer death the app recovered from.
 - **VSCodroid: UI Scale** sets the size of the whole interface, up to 150% where the screen has room, and keeps it across restarts.
 - **VSCodroid: Storage Access** shows the app's elevated-storage status and offers the ways to raise it: All Files Access (Android's optional permission, granted on its settings page, with the `adb shell appops set com.vscodroid MANAGE_EXTERNAL_STORAGE allow` command copied to the clipboard, or granted through the Shizuku API when Shizuku is running). With All Files Access held, a folder picked with **Open Folder from Device** opens at its real location with no working copy: `.git`, `node_modules` and files of any size are included, and changes other apps make show up live. Without it, folders open through the mirrored copy exactly as before. Files and folders can also be handed over from a file manager (**View**/**Edit** on a folder), and the workspace opens at that folder.
+- The terminal runs programs stored in the app's own storage, such as compiled programs, `#!` scripts, Git hooks, `git submodule`, npm's `.bin` commands and the commands pip installs into a virtual environment. Setting `LD_PRELOAD` to `null` under `terminal.integrated.env.linux` in the Settings editor's Remote tab turns this off.
+- The key row has a last page of quick actions: Command Palette, Quick Open, the terminal, the side bar, the bottom panel and Save, one tap each.
+- The app installs on Android 11 and newer; it needed Android 13.
+- A C/C++ toolchain, installed from the toolchains screen like Ruby and Java, gives the terminal `cc`, `c++`, `gcc`, `g++`, `clang`, `clang++`, `ld` and the LLVM binary tools, and lets pip compile a package's C extension. It is 74 MB to download and needs the terminal's exec interceptor, so it does not work with `LD_PRELOAD` set to `null`.
 
 ### Changed
 
 - The editor is now Code - OSS 1.139.1, up from 1.133.0.
-- The editor no longer carries Windows, macOS, x86 and desktop Linux helper programs that cannot run on Android, which saves about 30 MB of storage on new installs and updates alike.
+- The editor no longer carries Windows, macOS, x86 and desktop Linux helper programs that cannot run on Android, which saves about 20 MB of storage on new installs and updates alike.
 - Left and Right from the trackpad or a keyboard with arrow keys do not move the caret in a number box such as a number setting, which keeps them from moving focus out of the box at either end; Home, End and a tap still move it.
 - A tap on a read-only file, such as one set with File: Toggle Active Editor Read-only in Session or `files.readonlyInclude`, moves the cursor without raising the soft keyboard.
-- A save to a network device folder while it is offline can now wait inside VSCodroid, with a notice, until the folder's version of the file can be read, and is then sent while the folder is open, or, if the folder reports file times, when it is next opened.
+- A save to a device folder whose version of the file changed since the editor last read or wrote it, and cannot be read or set aside, as on a network folder that is offline, is held inside VSCodroid with a notice. It is tried again after 30 seconds, then at waits that double up to 5 minutes while the folder is open, and where the folder reports file times opening the folder tries it again too. The hold is in memory only. A write that simply fails shows a notice and is not held.
 - Holding a key row key that has no alternates, such as Tab or Esc, presses it when you lift your finger rather than after the long-press delay; Ctrl, Alt and Shift still switch at the delay.
 - A terminal focused from a tap outside it, such as its tab in the panel, opens with the soft keyboard down until it is tapped, as a file opened from the Explorer does; one opened with Enter after typing in the Command Palette keeps it up, and the keyboard is up once a file opened that way from Quick Open, or created with Enter in the Explorer's New File box, has loaded.
+- The extra key row steps away once you type a character on a hardware keyboard, so a soft keyboard kept up beside one no longer costs the editor the row's height, and comes back when a finger lifts after touching the app's own screen, such as a tap in the editor.
+- The process monitor expects three background processes at idle instead of five and warns above six instead of eight, because the chat agent host no longer starts.
+- The Java 17 toolchain is recorded as 160 MB installed, up from 156, to leave room for the next JDK build, so its install asks for 8 MB more free space.
 
 ### Removed
 
 - Chat no longer offers the agent host's Copilot harness in its session picker, sessions created with that harness are no longer listed, and the settings `chat.defaultToCopilotHarness` and `chat.editor.preferCopilotHarness` have no effect. The Copilot extension is not changed by this.
-- The chat agent host and its Copilot backend, two background processes that started with the editor, no longer start, which frees about 350 MB at idle.
+- The chat agent host and its Copilot backend, two background processes that started with the editor, no longer start, which frees about 330 MB at idle.
 - An empty terminal no longer suggests typing `copilot`, a command that cannot run here.
 
 ### Fixed
 
+- The file watcher no longer aborts when one of its watches ends, which it did soon after the editor opened. After five restarts it stayed off, and files changed by a terminal, an extension or another app stopped appearing in the Explorer until the window was reloaded or the app was restarted.
+- A commit from the soft keyboard of more than 64 characters, or with a line break before its end, such as text pasted from the strip above Gboard's keys, is inserted as one paste: code keeps its indentation, and about 4,700 characters no longer hold the editor for about a second.
 - Signing in with a Microsoft account returns to the editor instead of stopping at a `Missing scheme` error, and its sign-in page opens without a confirmation prompt first.
-- Git asks for credentials again when an HTTPS remote needs them, in the terminal and from Source Control, including through the GitHub sign-in. Its prompt helper could not be started, so such a push, pull or clone failed.
+- Git's credential prompt works for HTTPS remotes from Source Control, Git: Clone and the terminal, including the GitHub sign-in. Its prompt helper could not be started, so Source Control and Git: Clone failed on a remote that needed credentials and the terminal fell back to a plain text prompt.
 - The `vscodroid` command, which opens files in the editor from a terminal, starts instead of answering "Permission denied".
-- An app update no longer unpacks an unused second copy of a bundled extension, up to 29 MB for Python, beside the same or a newer version installed from the Extensions view.
+- An app update no longer unpacks an unused second copy of a bundled extension, up to 29 MB for Python, beside any version of it installed from the Extensions view.
 - The next app update removes such a copy that earlier updates left behind, when nothing lists it and the version installed from the Extensions view is on the device.
-- After an update, the editor loads its own styles fresh rather than the copy an earlier version left in the WebView cache, so touch fixes to menus and the side bar reach devices that had run an older version.
+- After an update, the WebView's cache is cleared once, so a stylesheet or script the server changed without a VS Code version change is fetched again rather than served from an earlier build's copy.
 - The editor starts on a device where Termux is installed and other apps' data directories are visible, as on some rooted phones. The bundled OpenSSL looked for its configuration in Termux's directory, was refused, and the server died before it could listen; it now reads a configuration file of its own.
 - An update removes the chat agent host's Copilot runtime that an earlier version left on the device, about 175 MB.
 - `jshell` from the Java 17 toolchain starts in the terminal instead of failing to launch its execution engine.
@@ -50,16 +74,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enter on Gboard accepts in the Command Palette, Quick Open and input boxes such as Open in Browser, where it often did nothing.
 - Typing in the editor with a soft keyboard no longer adds reversed or repeated letters, or deletes the wrong ones, after the cursor moves, the editor regains focus or a keyboard suggestion is tapped; text such as `upgradessedargpu` could be saved.
 - Moving the cursor with a key or a tap, or accepting one of the editor's suggestions with Tab or a tap, while the soft keyboard still underlines a word no longer makes the keyboard's next edit land where that word was; text such as `alpha delta charlie charlie` could be saved.
-- Saving a file in a device folder no longer overwrites changes another app made to it while the folder was open; the other app's version is normally kept beside yours as `<name>.device-<time>`. A folder over 64 MB that changes file times on its own, as some SD cards do, can also get such a copy of an unchanged file until each of its files has been read once after the update, 64 MB per opening.
+- Saving a file in a device folder no longer overwrites changes another app made to it while the folder was open: where the folder reports a different time or size for the file than the editor last read or wrote, and the content differs, the other app's version is kept beside yours as `<name>.device-<time>`. A folder over 64 MB whose provider changes file times on its own can also get such a copy of an unchanged file until each of its files has been read once after the update, 64 MB per opening.
 - A save or a delete still being sent when its device folder is opened again no longer replaces or removes the device's version of the file if that open could not read it.
-- Deleting a file in a device folder no longer removes changes another app made to it while the folder was open; the file stays in the device folder and a notice says so.
-- In a device folder that reports no file times, a change another app made to a file before the folder was opened, which the editor did not show, is no longer overwritten by the next save of that file or removed by deleting it.
+- Deleting a file in a device folder no longer removes changes another app made to it while the folder was open, where the folder reports a different time or size for the file than the editor last read or wrote and the content differs; the file stays in the device folder and a notice says so.
+- In a device folder that reports no file times, a change another app made to a file before the folder was opened, which the editor did not show, is kept as `<name>.device-0` beside the file before the next save replaces it, and is no longer removed by deleting the file.
+- Deleting a folder you renamed in a device folder no longer removes documents inside it that the editor never had, as when the provider could not list the folder when it was opened.
+- In a device folder that reports no file times, a file you edit while the folder is being opened is no longer replaced by the device's older version at the next opening.
+- Open Recent keeps a folder's name when the provider does not answer for it at one opening; the list showed the folder's document id until an opening that was answered.
 - In a device folder that reports neither file times nor sizes, a file you edited starts receiving device changes again once both sides hold the same content, as it already did where sizes are reported.
 - Opening a large device folder no longer fills the phone's storage: copying stops while about 150 MB is still free, and the files left out stay unchanged in the device folder.
 - A device folder shows its own name in the Explorer and the title bar instead of a code such as `8e440ff38c8e`. One opened in an earlier version offers to reopen under its name, with its open files.
 - The soft keyboard, once put away with Back or the navigation bar's hide key, no longer comes back when the file is scrolled.
 - `npm install` installs the Android builds that Rollup, Rolldown, Lightning CSS and oxlint publish; without them Vite 8 stopped at "Cannot find native binding".
-- The warning at launch about an outdated Android System WebView now appears below version 125, where Markdown previews and extension panels stay blank, instead of only below 105.
+- The warning at launch about an outdated Android System WebView now appears below version 125, where Markdown previews and extension panels stay blank, instead of only below 105, as a dialog with an Update button shown once per WebView version.
 - `npm` and `npx` start when another program runs them, such as `timeout`, `sh -c` or a tool that runs `npm install` itself, instead of failing with `ENOENT`.
 - The process monitor's status bar item stays in place when an extension that runs in the page adds an unnamed status bar item of its own; the two used to share one slot.
 - A swipe across the key row that starts slowly turns the page without pressing the key it started on, switching a modifier or leaving that key's alternates open.
@@ -68,23 +95,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In text boxes and the terminal, Ctrl or Alt latched on the key row combines with the next letter on a keyboard that underlines words, as some Gboard versions do: Ctrl then C stops a running command instead of typing c.
 - A key row chord typed in the terminal that opens a view, such as Ctrl then P, no longer deletes the last letter at the prompt on a keyboard that does not underline words, such as Gboard 18.
 - A key row modifier no longer stays lit after a split-screen resize that interrupts a hold on it or a trackpad drag.
-- Opening a folder, reloading the window and starting the app no longer show a white screen and then the light theme for a few seconds before the dark theme.
-- A folder's own settings, such as a colour theme in its `.vscode/settings.json`, apply from the start of a load, the first time the folder opens included, instead of giving way to your settings for several seconds.
+- Opening a folder, reloading the window and starting the app no longer show a white screen and then the light theme for a few seconds before the dark theme, except the first load of a folder that names a theme from an extension you installed.
+- A folder's own settings, such as a built-in colour theme in its `.vscode/settings.json`, apply from the start of a load, the first time the folder opens included, instead of giving way to your settings for several seconds.
 - Under a light theme, the status and navigation bars and the space the keyboard leaves while a folder opens or the window reloads take the theme's background instead of staying dark.
+- A reload or a folder switch no longer shows the editor half dismantled, with its terminals emptied and its styles removed, for about half a second; the editor's background shows until the next page paints.
 - Under a light theme the app also starts light: the setup screen and the "Starting server..." page take the background the editor last showed, and the launch screen is white from the second start after updating.
 - Pressing Enter on Gboard with the cursor inside or at the start of a word no longer writes that word over the next line; text such as `ha1 = 1, aha1a2 = 2` could be saved.
 - Backspace on Gboard right after Enter at the start of a line deletes the line break instead of doing nothing.
 - Putting the soft keyboard away after tapping a word no longer opens the suggestion list over it.
-- In the editor, Ctrl or Alt latched on the key row combines with the next letter, Backspace or space from the soft keyboard: Ctrl then P opens Quick Open instead of typing p.
+- In the editor, Ctrl or Alt latched on the key row combines with the next letter, Backspace or space from the soft keyboard: Ctrl then P opens Quick Open instead of typing p. Text the keyboard commits in one piece while one is latched, such as a suggestion, is dropped and the latch is spent.
 - A tap outside the text that leaves the editor or the terminal focused, such as on the Explorer or Search icon, puts the soft keyboard away, a slow or slightly sliding tap included; it could stay up, with typing going to the file or the shell behind the view.
-- On a phone, a drag outside the text, a long press or a button that opens a menu no longer puts a soft keyboard away, so the menu stays open.
+- On a phone, a drag along the activity bar, a long press or a tap on a button that opens a menu, such as More Actions, no longer puts the soft keyboard away, so the menu stays open; a touch on a list such as the Explorer still does, because the list takes focus.
 - With the terminal focused, a tap outside it no longer brings back a soft keyboard put away with Back.
 - A suggestion list closes when a tap lands outside the editor; it stayed open over the view the tap opened, and a tap meant for a file in the Explorer could accept a suggestion into the editor.
 - Gboard's suggestion strip follows the text when a tap or a cursor key lands at the same column of another line; it went on offering the old words, and picking one wrote over the text at the cursor.
+- The light bulb's Code Action list stays open when tapped with the soft keyboard up; it closed again at once.
 
 ### Security
 
-- The editor server's connection token is replaced on every server restart, and the app neither sends it nor forwards webview requests to the server's port until the server is ready, so another app that takes the port during a restart gets no usable token. A webview opened in that time waits up to four seconds for the server to be ready.
+- The editor server's connection token is replaced on every server start except an adopted one, and the app neither sends it nor forwards webview requests to the server's port until the server is ready, so another app that takes the port while the server is down gets no usable token. A webview opened in that time waits up to four seconds for the server, and only two requests wait at once; the rest are refused at once.
 
 ## [1.4.0] - 2026-09-18
 
@@ -1084,7 +1113,8 @@ This release represents the cumulative work across milestones M0 through M5, bri
 - Health check polling for server readiness
 - Android intent handling for "Open with VSCodroid"
 
-[Unreleased]: https://github.com/rmyndharis/VSCodroid/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/rmyndharis/VSCodroid/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/rmyndharis/VSCodroid/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/rmyndharis/VSCodroid/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/rmyndharis/VSCodroid/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/rmyndharis/VSCodroid/compare/v1.1.0...v1.2.0

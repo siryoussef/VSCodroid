@@ -436,6 +436,27 @@ class ExtraKeyRow @JvmOverloads constructor(
             ViewCompat.requestApplyInsets(this)
         }
 
+    /**
+     * Whether the last key typed came from a hardware keyboard and no finger has
+     * left the screen since, as `MainActivity` tells it through [HardwareTyping].
+     *
+     * The same row-off decision as [hiddenByUser], reached automatically for the
+     * length of a run of typing: the row repeats keys a hardware keyboard has, and
+     * a soft keyboard kept up beside one gave it height of the editor for
+     * nothing. Transient where that one is persisted, because it is what the row
+     * does for now and not a choice, so a restart starts with the row where the
+     * soft keyboard puts it. It folds into the one decision below for the same
+     * reason the other does: leaving by the door the keyboard going away uses
+     * dismisses the alternates window and clears a latched modifier on the page as
+     * well as on the row.
+     */
+    var hiddenForHardwareKeyboard = false
+        set(value) {
+            if (field == value) return
+            field = value
+            ViewCompat.requestApplyInsets(this)
+        }
+
     fun setupWithRootView(rootView: View) {
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { v, insets ->
             // The display cutout is its own inset type, not part of systemBars().
@@ -473,7 +494,7 @@ class ExtraKeyRow @JvmOverloads constructor(
             } else if (pageHeightPx >= dpToPx(RELEASE_PAGE_HEIGHT_DP)) {
                 suppressedForHeight = false
             }
-            val showRow = imeVisible && !suppressedForHeight && !hiddenByUser
+            val showRow = imeVisible && !suppressedForHeight && !hiddenByUser && !hiddenForHardwareKeyboard
             if (this.imeVisible != imeVisible) {
                 this.imeVisible = imeVisible
                 onImeVisibilityChanged?.invoke(imeVisible)
@@ -667,7 +688,7 @@ class ExtraKeyRow @JvmOverloads constructor(
                 Logger.d(tag, "Shift toggled: $shiftActive")
             }
             else -> {
-                keyInjector?.injectKey(key, ctrlKey = ctrlActive, altKey = altActive, shiftKey = shiftActive)
+                sendKeyPress(keyInjector, key, button.fixedModifiers, KeyModifiers(ctrlActive, altActive, shiftActive))
                 resetModifiersIfNeeded()
             }
         }
@@ -842,6 +863,42 @@ internal fun latchedModifierLabel(ctrl: Boolean, alt: Boolean, shift: Boolean): 
         if (shift) add("shift")
     }
     return if (held.isEmpty()) null else held.joinToString("+")
+}
+
+/**
+ * The modifiers one press of a row key carries: its own when it has [fixed]
+ * ones, the row's [latched] ones otherwise.
+ *
+ * A shortcut key does not take the latches, not even to add to its own. They
+ * are on page 1, a swipe away from the page the shortcuts are on, and a latch
+ * left lit there would turn a shortcut into a chord nothing is bound to: Alt
+ * over Ctrl+S, or Shift over Ctrl+P, which is Ctrl+Shift+P and opens the Command
+ * Palette instead of Go to File. The press clears the latches afterwards, as any
+ * key's does.
+ *
+ * Split out of [ExtraKeyRow] for the reason [latchedModifierLabel] is: the row is
+ * a `View` whose initialiser reaches resources, so this is the half a JVM test
+ * can run.
+ */
+internal fun pressModifiers(fixed: KeyModifiers?, latched: KeyModifiers): KeyModifiers =
+    fixed ?: latched
+
+/**
+ * One press of a row key, delivered: [key] with the modifiers [pressModifiers]
+ * gives it, and a key with [fixed] modifiers, a shortcut, at the workbench
+ * rather than at the focused element (see [KeyInjector.injectKey]).
+ *
+ * Every other key keeps the route it had: the latched modifiers, and the focused
+ * element as the target, which is where a chord from page 1 has to land.
+ *
+ * Split out of [ExtraKeyRow] for the reason [pressModifiers] is, so that where a
+ * key lands can be run on the JVM.
+ */
+internal fun sendKeyPress(injector: KeyInjector?, key: String, fixed: KeyModifiers?, latched: KeyModifiers) {
+    val sent = pressModifiers(fixed, latched)
+    injector?.injectKey(
+        key, ctrlKey = sent.ctrl, altKey = sent.alt, shiftKey = sent.shift, toWorkbench = fixed != null,
+    )
 }
 
 /**

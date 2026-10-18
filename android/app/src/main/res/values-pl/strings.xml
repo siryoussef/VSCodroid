@@ -361,6 +361,7 @@
          strings on purpose; "Ruby" and "Java 17" are the products' own names. -->
     <string name="toolchain_ruby_description">Ruby z irb, gem, bundler</string>
     <string name="toolchain_java_description">OpenJDK 17 (javac, jar, jshell)</string>
+    <string name="toolchain_cpp_description">C i C++ (clang, lld). Wymaga przechwytywania exec w terminalu: nie działa, gdy LD_PRELOAD jest ustawione na null.</string>
 
     <!-- The checkmark on a selected toolchain card. It is an ImageView with no
          text, so this is the whole of what a screen reader has to announce it. -->
@@ -535,6 +536,18 @@
     <string name="key_desc_end">Klawisz End</string>
     <string name="key_desc_page_up">Strona w górę</string>
     <string name="key_desc_page_down">Strona w dół</string>
+
+    <!-- The quick actions page, the last page of the key row. Each key sends one
+         of the workbench's shortcuts and is named for the command it runs, in the
+         words the editor itself uses for it, so a reader hears what the Command
+         Palette would show. The label drawn on the key is the shortcut, ^P for
+         Ctrl+P, and is not translated, like every other label on the row. -->
+    <string name="key_desc_quick_commands">Paleta poleceń</string>
+    <string name="key_desc_quick_open">Przejdź do pliku</string>
+    <string name="key_desc_quick_terminal">Przełącz terminal</string>
+    <string name="key_desc_quick_side_bar">Przełącz podstawowy pasek boczny</string>
+    <string name="key_desc_quick_panel">Przełącz panel</string>
+    <string name="key_desc_quick_save">Zapisz</string>
 
     <!-- The four characters that exist only as long-press alternates. Every
          other alternate is a key on some page and reuses that key's name, so

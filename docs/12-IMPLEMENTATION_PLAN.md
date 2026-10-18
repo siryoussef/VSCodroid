@@ -1512,7 +1512,7 @@ android/app/src/main/kotlin/com/vscodroid/
 1. **Day 1** (create npm bash functions):
    - Define `npm` and `npx` as bash functions in `.bashrc` (not script wrappers)
    - Functions invoke Node.js with `npm-cli.js` entry point from `usr/lib/node_modules/npm/`
-   - Bash functions required because SELinux denies `execute_no_trans` on `app_data_file` for targetSdk >= 29, so a shebang script under `filesDir` cannot be exec'd
+   - Bash functions required because SELinux denies `execute_no_trans` on `app_data_file` for targetSdk >= 29, so a shebang script under `filesDir` cannot be exec'd outside a preloaded shell (the terminal's exec interceptor starts one through the system linker; the extension host has no such route)
    - Create `.npmrc` with `script-shell` pointing to `libbash.so`
 
 2. **Day 2** (validation):
@@ -1520,7 +1520,7 @@ android/app/src/main/kotlin/com/vscodroid/
    - Test: `npx create-vite-app test-app`. This has failed in every release so far: see the last acceptance criterion below
    - Verify npm cache directory is properly configured
 
-> **Android exec note**: this is SELinux, not a `noexec` mount, and the difference is load-bearing. SELinux denies `execute_no_trans` on `app_data_file` for targetSdk >= 29, so a shim script under `filesDir` cannot be exec'd, while `dlopen` of a `.node` addon from the same directory is still allowed and is what `pty.node` relies on. A `noexec` mount would block both. Bash functions defined in `.bashrc` and in the `BASH_ENV` file work around the exec side by invoking Node.js with the npm CLI entry point as an argument.
+> **Android exec note**: this is SELinux, not a `noexec` mount, and the difference is load-bearing. SELinux denies `execute_no_trans` on `app_data_file` for targetSdk >= 29, so a shim script under `filesDir` cannot be exec'd, while `dlopen` of a `.node` addon from the same directory is still allowed and is what `pty.node` relies on. A `noexec` mount would block both. Bash functions defined in `.bashrc` and in the `BASH_ENV` file answer the exec side by invoking Node.js with the npm CLI entry point as an argument. A shell running under the terminal's exec interceptor is the exception: it starts such a script through `/system/bin/linker64`, so the functions are for everything that is not a preloaded shell.
 
 **Acceptance criteria**:
 
@@ -1923,7 +1923,7 @@ flowchart TD
 ```
 
 > [!NOTE]
-> **Package Manager** (`vscodroid pkg`) was originally scoped for M5 but has been deferred to the **Post-Release Roadmap**. Similarly, **Rust** and **C/C++ (Clang)** toolchains are deferred to Post-Release; M5 focuses on Go, Ruby, and Java only. Toolchain compatibility verification and APK size audit have been moved to M6 (Release) where they logically belong as verification/release activities.
+> **Package Manager** (`vscodroid pkg`) was originally scoped for M5 but has been deferred to the **Post-Release Roadmap**. Similarly, **Rust** and **C/C++ (Clang)** toolchains were deferred to Post-Release; M5 focused on Go, Ruby, and Java only. C/C++ has since shipped as a third pack, `toolchain_cpp` (see section 7.5 of the technical specification); Rust has not. Toolchain compatibility verification and APK size audit have been moved to M6 (Release) where they logically belong as verification/release activities.
 
 ---
 
@@ -2039,7 +2039,7 @@ android/settings.gradle.kts         (register asset pack modules)
 ```
 
 > [!NOTE]
-> M5 focuses on **Go, Ruby, and Java** only. Additional toolchains (Rust ~100 MB, C/C++ Clang ~84 MB) are deferred to the **Post-Release Roadmap** and will use the same Play Asset Delivery pipeline.
+> M5 focuses on **Go, Ruby, and Java** only. Additional toolchains (Rust ~100 MB, C/C++ Clang ~84 MB) are deferred to the **Post-Release Roadmap** and will use the same Play Asset Delivery pipeline. C/C++ was built that way afterwards as `toolchain_cpp`, about 254 MB unpacked and a 74 MB ZIP, with its own `scripts/download-cpp.sh`.
 
 **Implementation steps**:
 

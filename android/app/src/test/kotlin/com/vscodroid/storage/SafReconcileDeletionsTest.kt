@@ -42,6 +42,9 @@ class SafReconcileDeletionsTest {
     @TempDir
     lateinit var mirror: File
 
+    @TempDir
+    lateinit var filesDir: File
+
     private lateinit var resolver: ContentResolver
     private lateinit var context: Context
     private val uris = mutableMapOf<String, Uri>()
@@ -92,6 +95,7 @@ class SafReconcileDeletionsTest {
         resolver = mockk(relaxed = true)
         context = mockk(relaxed = true)
         every { context.contentResolver } returns resolver
+        every { context.filesDir } returns filesDir
     }
 
     @AfterEach
@@ -192,6 +196,58 @@ class SafReconcileDeletionsTest {
     }
 
     private fun mirrored(name: String) = File(mirror, name)
+
+    private fun unsyncedConflict(name: String = "notes.txt"): File {
+        deviceFolderHolding(name to "ORIGINAL")
+        sync()
+        val local = mirrored(name).apply {
+            writeText("UNSYNCED EDIT")
+            setLastModified(DEVICE_TIME + 1_000)
+        }
+        deviceFolderHolding(name to "NEW DEVICE EDIT", modified = DEVICE_TIME + 2_000)
+        return local
+    }
+
+    @Test
+    fun `a conflict keeps an existing file at the preservation name`() {
+        val local = unsyncedConflict()
+        val backup = mirrored("notes.txt.local-${local.lastModified()}").apply {
+            writeText("EARLIER BACKUP")
+        }
+
+        sync()
+
+        assertEquals("EARLIER BACKUP", backup.readText())
+        assertEquals("NEW DEVICE EDIT", local.readText())
+        assertTrue(mirror.listFiles()!!.filter { it.isFile }.any { it.readText() == "UNSYNCED EDIT" })
+    }
+
+    @Test
+    fun `a conflict keeps the local edit when a directory occupies the preservation name`() {
+        val local = unsyncedConflict()
+        val occupied = mirrored("notes.txt.local-${local.lastModified()}").apply { mkdir() }
+
+        sync()
+
+        assertTrue(occupied.isDirectory)
+        assertEquals("NEW DEVICE EDIT", local.readText())
+        assertTrue(mirror.listFiles()!!.filter { it.isFile }.any { it.readText() == "UNSYNCED EDIT" })
+    }
+
+    @Test
+    fun `a failed conflict preservation leaves the local edit intact`() {
+        val local = unsyncedConflict("n".repeat(240) + ".txt")
+
+        sync()
+
+        assertEquals("UNSYNCED EDIT", local.readText())
+        assertFalse(recordedPaths().contains(local.name))
+
+        deviceFolderHolding(local.name to "NEW DEVICE EDIT", modified = DEVICE_TIME + 2_000)
+        sync()
+
+        assertEquals("UNSYNCED EDIT", local.readText(), "retrying must not discard the unpreserved edit")
+    }
 
     @Test
     fun `a document deleted on the device is dropped from the mirror`() {
@@ -618,7 +674,7 @@ class SafReconcileDeletionsTest {
 
     @Test
     fun `a copy that failed does not vouch for what was already there`() {
-        // copyDocumentToLocal writes beside its destination and renames, deliberately
+        // copyDocumentToLocal stages its bytes and renames, deliberately
         // leaving the destination untouched when it fails. So after a failed copy the
         // path still holds whatever was there -- which can be an edit of the user's that
         // no sync ever wrote. Reading identity back from disk then records that edit as

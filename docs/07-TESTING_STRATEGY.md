@@ -14,7 +14,7 @@ VSCodroid has unique testing challenges: it's a hybrid app (Kotlin + WebView + N
 - Test the integration boundaries (Kotlin ↔ WebView ↔ Node.js); that's where bugs hide
 - Automate what can run on CI; manual test what requires real devices
 - Prioritize real device testing over emulator (ARM64 binaries don't run on x86 emulators)
-- Test on the lowest-spec supported device (4GB RAM, Android 13)
+- Test on the lowest-spec supported device (4GB RAM, Android 11)
 
 ---
 
@@ -98,6 +98,7 @@ temporary directory where it needs files, and is executed directly by `node`.
 | Arrow edge guard | That a Left or Right at the start or end of a text box, in a number box, or with Alt below WebView 149 is cancelled, also where the box stops the key's propagation, and one that can still move the caret or that a handler already used is not; and that no listener of the guard's is left on a box once the key is over. Also, in the same interceptor, that a Ctrl or Alt latched on the editor's EditContext host turns the next character, composed or committed, and a Backspace sent as a key press, into the chord, and gives the editor its EditContext back when the latch is spent or cleared, restarting input after the chord while the host keeps focus, or once focus has left, so that Quick Open gets what is typed after Ctrl then `p` | `scripts/test-arrow-edge-guard.js` |
 | Modifier release | That each modifier a key row chord sent as a DOM event carried comes up after it, so the workbench holds no modifier and no toolbar stays on its Alt action, and that nothing reads as a lone Alt press, which focuses the menu bar; and that no release from the row, by script or by a real press, accepts the recently used editors picker Ctrl+Tab opens, while a hardware keyboard's still does, and each Shift of a keyboard holding both comes up; and that a letter a composing keyboard adds in a text box with Ctrl latched becomes the chord once the composition is over, with the box as it was before the letter and never losing the focus, and in the terminal after the word composed before it, also when the chord takes the focus out of the terminal; and that in the terminal a letter a keyboard that commits types with Ctrl latched leaves the word typed before it at the prompt when its chord takes the focus | `scripts/test-modifier-release.js` |
 | Soft keyboard Enter | That a code-less Enter is given the `code` Enter unless Ctrl or Alt is latched, and spends a Shift latched alone without carrying it; that a composing Enter is still stopped and replaced outside the editor; and that a real PageUp, PageDown, Ctrl+Home, Ctrl+End or Right composing in the quick input has `isComposing` cleared, and no other key, target or synthetic event does | `scripts/test-composing-enter.js` |
+| Reload curtain | That a page told to leave has a curtain in its background colour on the root in the same dispatch, and none for a leave the workbench vetoes, whichever listener runs first, for a navigation that never commits, for a restored page or for a page with no colour | `scripts/test-leave-curtain.js` |
 | Keyboard guard | That a caret key or the editor's own tap or long press, while the focused EditContext host composes a word, blurs and refocuses the host once and without writing `inputmode`: before the editor's handler, except that with a suggestion list open, Tab accepting a suggestion and a tap on a row do it after the list's handler, and the keys that move the list's highlight not at all; and that nothing else does. Also that the keyboard put away holds down again, leaving a composing host and text boxes alone, that a read-only EditContext host never lets it up, and that a tap outside text with the keyboard up and an editing host still focused asks the keyboard down, by the guard's own test or the workbench's gesture tap, while a drag, a long press, a tap that moves focus into a text box, a tap on a button that opens a menu and a touch in a context menu, or on one a tap has just closed, do not, and that no touch outside text holds the focused host while the keyboard is up; that a keyboard reported down while nothing that takes text has focus clears nothing a tap or typing counted, so a file Quick Open or New File opens through such a gap is not held; that a second request first puts the previous host's policy back; that the terminal's helper textarea is held down and let up as the editor's host is; and that typing in a text box with the keyboard up counts as aiming at text, untrusted events, typing with the keyboard down and typing outside its text selector excepted; and that a host blurred and focused again in one task keeps a keyboard that is up, a hold put on at a focus to take it down, a read-only host and a focus in a later task excepted | `scripts/test-keyboard-guard.js` |
 | Serve on Network | The port scan and its reachable/local split | `scripts/test-serve-network.js` |
 | Welcome | That the walkthrough and side bar markers are written only after the command they record actually ran | `scripts/test-welcome.js` |
@@ -141,7 +142,7 @@ test source.
 
 ### 3.2 Instrumented Tests
 
-63 tests across twelve classes, in `android/app/src/androidTest/`. They
+75 tests across thirteen classes, in `android/app/src/androidTest/`. They
 need an `arm64-v8a` device or emulator, because the app ships that ABI alone.
 Counted from the sources (`grep -cE '^\s*@Test'` over the directory), because no
 run covers the whole set and none of it is scheduled. Nothing holds this figure
@@ -162,6 +163,7 @@ to the suite; `android/app/src/androidTest/README.md` states the total that
 | **ExtraKeyButtonTouchInstrumentedTest** | `MotionEvent`s on one key of the row: a finger that rests past the long-press timeout and then swipes away presses nothing, a long hold presses once on release, two quick taps are two presses, a key with alternates still opens them on a hold, a modifier held past the timeout latches before the finger lifts, and a slow swipe from a modifier leaves it as it was; a second finger's swipe leaves a modifier held under the first latched, and a held finger sliding after the row stood down does not latch it again; and a resize that repacks the row under a held modifier or a trackpad drag leaves the row and the page agreeing | arm64 device |
 | **GestureTrackpadTouchInstrumentedTest** | Multi-pointer `MotionEvent`s on the trackpad: a second finger taking over does not jump the caret, and an untracked finger lifting does not end the drag | arm64 device |
 | **ExecTrampolineOnDeviceTest** | The kernel policy no JVM test can ask about: a payload under `filesDir` cannot be executed directly, the trampoline runs the same payload by bare name, an unknown name fails with a reason, an environment row in the table reaches the program, and a variable the caller already has is not overwritten. The direct-execve control is asserted first, so a device that never denied anything fails loudly rather than passing for the wrong reason | arm64 device |
+| **ExecPreloadOnDeviceTest** | The same question asked of the exec interceptor: a shell with `libtermux-exec.so` preloaded starts a payload under `filesDir` that the app may not execve, by its absolute path and by a relative one, a `#!/bin/sh` script finds the system shell, a system binary keeps the preload for what it starts, a symlink onto a system binary is started as itself, a linker started by hand names its payload in `TERMUX_EXEC__PROC_SELF_EXE`, an exec with no argv[0] is refused as it is without the preload, and a preload naming a missing file kills the shell itself. The library is copied out of the APK's assets at mode 0600, so the suite needs no first-run state. Same direct-execve control, and the same precondition: the instrumentation process must carry no LD_PRELOAD of its own | arm64 device |
 
 **Framework**: AndroidJUnit4 + Espresso + UI Automator (JUnit 4, on device)
 
@@ -230,7 +232,7 @@ Manual test scenarios that verify the full user experience:
 
 | Dimension | Test Targets |
 |-----------|-------------|
-| **Android versions** | 13 (API 33), 14 (API 34), 15 (API 35), 16 (API 36) |
+| **Android versions** | 11 (API 30, the minimum), 13 (API 33), 14 (API 34), 15 (API 35), 16 (API 36) |
 | **Devices** | Pixel 7/8 (reference), Samsung Galaxy S23/S24, Xiaomi (budget), Samsung Tab S9 (tablet) |
 | **RAM** | 4 GB (minimum), 8 GB (typical), 12+ GB (high-end) |
 | **Screen sizes** | Phone 6" (1080p), Phone 6.7" (1440p), Tablet 11" (2560p) |
@@ -270,7 +272,8 @@ See [Security Design § Testing Checklist](./06-SECURITY.md#7-security-testing-c
 `data_extraction_rules.xml` is written as an **allowlist with no exclusions**: it names
 `home/.vscodroid/data/Machine` and nothing else, so everything unnamed is already out. That makes
 the exclusion rows below a check on the shape of the rule as much as on the payload, and the row
-that matters most is **Rule shape**.
+that matters most is **Rule shape**. Android 11 applies `backup_rules.xml`, which holds the same
+single include, so the payload rows are asked on an Android 11 device too.
 
 | Test | Criteria | Method |
 |------|----------|--------|
@@ -280,7 +283,7 @@ that matters most is **Rule shape**.
 | Sensitive exclusion: connection token | `home/.vscodroid/data/token` is absent. It sits one directory from the included path, which is the near miss the allowlist exists to survive | Inspect backup payload, verify absent |
 | Workspace exclusion | `filesDir/projects` (the workspace on a new install), the `external` domain (which holds `Android/data/<pkg>/files/projects` on an install that kept it) and `filesDir/saf-mirrors` are all absent | Inspect backup payload, verify absent |
 | Preferences exclusion | The `sharedpref` domain is absent. Restoring `setup_version` onto a device with an empty `filesDir` would make the app skip extraction and start a server that is not there | Inspect backup payload, verify absent |
-| Rule shape | `backup_rules.xml` still matches the `<cloud-backup>` section of `data_extraction_rules.xml`. No supported device reads the first file, but it is the floor if `minSdk` ever drops to 30 | Diff the two files |
+| Rule shape | `backup_rules.xml` still matches the `<cloud-backup>` section of `data_extraction_rules.xml`. Android 11 reads the first file and every later release the second, so a difference is a different backup on each | `BackupRulesParityTest`; or diff the two files |
 | Post-update backup compatibility | Backup/restore still works after app update | Backup on version N, restore on N+1 |
 
 **Run**: Before M4 exit and before each production release.
@@ -328,7 +331,7 @@ flowchart TD
 |--------|---------|
 | Pixel 8 (8GB RAM, Android 16) | Primary development/testing device |
 | Samsung Galaxy S23 (8GB RAM, Android 15) | Second manufacturer compatibility |
-| Budget phone (4GB RAM, Android 13) | Minimum spec testing |
+| Budget phone (4GB RAM, Android 11) | Minimum spec testing |
 | Samsung Galaxy Tab S9 (8GB RAM) | Tablet/large screen testing |
 
 ---

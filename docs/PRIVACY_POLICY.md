@@ -1,7 +1,7 @@
 # VSCodroid Privacy Policy
 
 **Effective Date: February 13, 2026**
-**Last Updated: September 27, 2026**
+**Last Updated: October 14, 2026**
 
 ## Summary
 
@@ -92,7 +92,7 @@ When you push, pull, clone or fetch, the bundled Git client reaches the remote y
 
 ### Toolchain Downloads (User-Initiated)
 
-Additional programming language toolchains (Ruby, Java 17) can be downloaded on-demand. There are two delivery paths, and the app chooses between them at runtime by asking Android which package installed it:
+Additional programming language toolchains (Ruby, Java 17, C/C++) can be downloaded on-demand. There are two delivery paths, and the app chooses between them at runtime by asking Android which package installed it:
 
 - **Installed from the Google Play Store** (the installing package is `com.android.vending`): the toolchain arrives as a Google Play Asset Delivery pack, handled by the Google Play Store infrastructure. Google's privacy policy applies to Play Store interactions: https://policies.google.com/privacy.
 - **Installed any other way** -- a sideloaded APK, a debug build, `adb install` -- or when the installing package cannot be read at all: the app downloads a ZIP over HTTPS from this project's GitHub Releases (https://github.com/rmyndharis/VSCodroid/releases), following GitHub's redirect to its release-asset host. GitHub's privacy policy applies to that download.
@@ -105,6 +105,10 @@ When you run commands like `npm install` or `pip install` in the terminal, those
 
 `pip` is also pointed at a page this project publishes on GitHub Pages, one per Python version (for the Python this app bundles, https://rmyndharis.github.io/VSCodroid/wheels/3.14/wheels.html), which lists prebuilt Android builds of a few packages that PyPI has none of, such as `numpy` and `psutil`. pip reads that page when it looks for a package to install, including when the Jupyter extension installs `ipykernel`, and downloads a listed package from this project's GitHub Releases. Nothing from your files or code is sent. Like every request pip makes, including those to pypi.org, GitHub receives your device's IP address and pip's User-Agent, which names the versions of pip, Python and OpenSSL, the Android version, and the processor architecture, plus the versions of setuptools and the Rust compiler when those are installed, and whether pip appears to be running on a continuous-integration service; GitHub's privacy policy applies to them. How to turn this off is in the user guide, under Python Packages Written in C.
 
+Some extensions you install carry a program of their own inside the extension package you install from Open VSX. The Claude Code extension, for example, brings its command line tool that way; VSCodroid only starts the program for you. The extension's own privacy policy applies to it.
+
+Programs you compile, install or write yourself run on your device, inside this app's own sandbox and with only this app's permissions. VSCodroid does not upload them, does not start them unless you do, and downloads no program of its own beyond the toolchains you pick (see Toolchain Downloads above).
+
 ### SSH Connections (User-Initiated)
 
 If you use the bundled SSH client to connect to remote servers, those connections are initiated by you and go directly to the server you specify. VSCodroid does not proxy, monitor, or log SSH connections.
@@ -115,7 +119,7 @@ The VS Code editor UI communicates with the local server process over `localhost
 
 ## Android Backup (On by Default)
 
-VSCodroid allows Android's own backup service, so **one directory does leave the device** if you have backup enabled in your Android settings: `~/.vscodroid/data/Machine`, which holds this device's machine-scoped editor settings (`settings.json`). That file is both what VSCodroid writes there for the device and anything you change yourself on the **Remote** tab of the editor's Settings, and all of it is in the backup. Settings and keybindings you change on the **User** tab are stored by the editor inside the WebView and are not. Android uploads the backup to your Google account, not to us. We never see it.
+VSCodroid allows Android's own backup service, so **one directory does leave the device** if you have backup enabled in your Android settings: `~/.vscodroid/data/Machine`, which holds this device's machine-scoped editor settings (`settings.json`). That file is both what VSCodroid writes there for the device and anything you change yourself on the editor's Settings tab labelled **Remote [127.0.0.1:13337]** (the port can differ on your device), and all of it is in the backup. Settings and keybindings you change on the **User** tab are stored by the editor inside the WebView and are not. Android uploads the backup to your Google account, not to us. We never see it.
 
 This is written as an allowlist, so everything not named above is excluded rather than the other way round. In particular these are **not** backed up:
 

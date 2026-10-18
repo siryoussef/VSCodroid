@@ -114,6 +114,16 @@ android {
     // app is decided by targetSdk below, and that is deliberately not moved here.
     compileSdk = 37
 
+    // The NDK the Android plugin strips and extracts debug symbols with. The plugin
+    // no longer reads ANDROID_NDK_HOME, so with nothing set it takes its own default,
+    // and a runner image that stopped carrying that one made the release build
+    // package every library unstripped and the symbols zip lose four of its five
+    // libraries, with a green build. release.yml sets this to the NDK it installs;
+    // every other build leaves it to the plugin, which needs no NDK to package.
+    providers.environmentVariable("VSCODROID_NDK_VERSION").orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let { ndkVersion = it }
+
     signingConfigs {
         create("release") {
             storeFile = file(signingProp("storeFile", "VSCODROID_KEYSTORE_FILE",
@@ -126,7 +136,7 @@ android {
 
     defaultConfig {
         applicationId = "com.vscodroid"
-        minSdk = 33
+        minSdk = 30
         // Held at 36 on purpose, and lint's OldTargetApi is answered rather than
         // ignored. Targeting 37 blocks local network access by default, so a dev
         // server running here stops being reachable from another device on the
@@ -138,8 +148,8 @@ android {
         // browser simply times out.
         @Suppress("OldTargetApi")
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.4.0"
+        versionCode = 16
+        versionName = "1.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -330,7 +340,7 @@ android {
     }
 
     // On-demand toolchain asset packs (Play Asset Delivery)
-    assetPacks += listOf(":toolchain_ruby", ":toolchain_java")
+    assetPacks += listOf(":toolchain_ruby", ":toolchain_java", ":toolchain_cpp")
 
     bundle {
         language {
@@ -703,17 +713,22 @@ tasks.withType<Test> {
     // reader red. Renaming a resource is NOT a control for this: it changes the
     // id, so `processDebugResources` fails first and never reaches the test.
     //
-    //   res/layout    PickerAccessibilityWiringTest, TextContrastTest
-    //   res/values    PickerAccessibilityWiringTest, ThemeEdgeToEdgeTest,
-    //                 TextContrastTest
+    //   res/layout       PickerAccessibilityWiringTest, TextContrastTest
+    //   res/values       PickerAccessibilityWiringTest, ThemeEdgeToEdgeTest,
+    //                    TextContrastTest, StartColorTest
+    //   res/values-v31   StartColorTest
+    //   res/xml          BackupRulesParityTest
     //
-    // layout/ and values/ only. Nothing reads drawable/, mipmap-*/ or xml/, and
-    // the mipmaps are images whose hashes would be paid for on every run and
-    // never asked about. Widen this the moment a suite reads one of them:
+    // layout/, values/, values-v31/ and xml/ only. Nothing reads drawable/ or
+    // mipmap-*/, and the mipmaps are images whose hashes would be paid for on
+    // every run and never asked about. Widen this the moment a suite reads one
+    // of them:
     //   grep -rn 'File("src/main/res' android/app/src/test/kotlin
     inputs.files(
         fileTree("src/main/res/layout"),
         fileTree("src/main/res/values"),
+        fileTree("src/main/res/values-v31"),
+        fileTree("src/main/res/xml"),
     )
         .withPropertyName("readableResources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
@@ -1441,6 +1456,9 @@ val verifyVenvHome = tasks.register<Exec>("verifyVenvHome") {
 fun rubyPackHoldsPayload(): Boolean =
     File(rootProject.projectDir, "toolchain_ruby/src/main/assets/usr").isDirectory
 
+fun cppPackHoldsPayload(): Boolean =
+    File(rootProject.projectDir, "toolchain_cpp/src/main/assets/usr").isDirectory
+
 // The same question of every pack, found the way check-pack-overlap.py finds
 // them, so a pack added later is covered here without this line being edited.
 fun anyPackHoldsPayload(): Boolean =
@@ -1492,6 +1510,47 @@ val verifyRubyPackShellPaths = tasks.register<Exec>("verifyRubyPackShellPaths") 
     )
 }
 
+// The same sweep for the C/C++ pack, for the same reason and with its own subject.
+//
+// download-cpp.sh rewrites paths.h and sweeps the pack once it has placed it, so
+// a pack this build has just downloaded is answered for by the script that
+// filled it. What that leaves open is the pack already sitting in the checkout,
+// which bundleRelease packages whatever it holds. The pack is new enough that an
+// older tree is not what this guards against today; it is here so that the day
+// a download script is edited, or Termux moves a path, a tree placed before that
+// is not the one that ships.
+//
+// Armed by this pack's payload and by no other pack's, for the reason the Ruby
+// sweep is: a checkout that has run download-ruby.sh and not download-cpp.sh is
+// an ordinary state, and the gate has nothing of its own subject to read there.
+val verifyCppPackShellPaths = tasks.register<Exec>("verifyCppPackShellPaths") {
+    group = "verification"
+    description = "Checks no file in the C/C++ asset pack names Termux's prefix as its shell."
+
+    workingDir = rootProject.projectDir.parentFile
+    commandLine(
+        "python3", "scripts/patch-default-shell.py",
+        "--check", "android/toolchain_cpp/src/main/assets",
+    )
+
+    // Armed by the payload rather than by the directory, as for Ruby: the
+    // manifest and the payload are written separately, and sweeping a pack that
+    // holds only the first would report it clean on one JSON file.
+    onlyIf { cppPackHoldsPayload() }
+
+    failOnExit(
+        "The C/C++ toolchain pack names a shell inside Termux's data\n" +
+            "directory. The FAIL line above names the file, relative to the\n" +
+            "pack's assets. This app cannot read or create that path, so a\n" +
+            "program compiled against such a header fails with ENOENT where\n" +
+            "it starts a shell.\n" +
+            "\n" +
+            "Re-run scripts/download-cpp.sh, which rewrites paths.h and sweeps\n" +
+            "the pack afterwards. A pack left over from a run that predates\n" +
+            "that rewrite is the likely cause."
+    )
+}
+
 
 // Lint's own tasks read the asset directories by path rather than through the
 // source set, so naming the task above does not reach them and they have to be
@@ -1518,8 +1577,8 @@ tasks.matching { it.name.contains("Lint") || it.name.contains("lint") }
 val packagingGates = listOf(
     checkPatchFingerprints, verifyServerTree, verifyBundledBinaries,
     verifyRequiredBinaries, verifyBundledShellPaths, verifyRubyPackShellPaths,
-    verifyNativeAddons, verifyPackagedAlignment, checkPackOverlap,
-    verifyPythonPlatform, verifyVenvHome,
+    verifyCppPackShellPaths, verifyNativeAddons, verifyPackagedAlignment,
+    checkPackOverlap, verifyPythonPlatform, verifyVenvHome,
 )
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
@@ -1597,7 +1656,7 @@ gradle.taskGraph.whenReady {
     // the name cannot.
     //
     // The `lint` figure is what says release.yml's lint step is cheap: it costs
-    // no second asset merge and re-runs none of the eleven gates below, which
+    // no second asset merge and re-runs none of the twelve gates below, which
     // matters because that job's budget already covers the server fetch, every
     // download, the addons, the unit tests, assembleRelease and bundleRelease.
     val merging = here.filter { it.javaClass.name.contains("MergeSourceSetFolders") }
@@ -1644,7 +1703,7 @@ gradle.taskGraph.whenReady {
         )
     }
 
-    // The last question, and the one none of the eleven gates can answer: is
+    // The last question, and the one none of the twelve gates can answer: is
     // there an editor in this build at all.
     //
     // Four of them would notice an absent server tree, and all four are armed by
@@ -1736,7 +1795,7 @@ val checkPermissionClaims = tasks.register<Exec>("checkPermissionClaims") {
 val permissionClaimsProducer = "processReleaseMainManifest"
 
 // Both gates are attached by an EXACT task name, which is the wiring the
-// assertion further up deliberately does not trust anywhere else: the eleven
+// assertion further up deliberately does not trust anywhere else: the twelve
 // packaging gates are matched by name SHAPE and then checked against the live
 // graph, because a name that stops matching detaches in silence and takes an
 // unchecked asset tree into an APK with it.

@@ -51,8 +51,8 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 
 ### 2.4 Constraints
 
-- ARM64 Android only (API 33+)
-- All binaries must be bundled as .so in APK (Android W^X enforcement)
+- ARM64 Android only (API 30+)
+- Every binary the app installs must arrive in the APK as .so or in a Play asset pack (Android W^X enforcement). Programs a user builds or installs under the app's storage cannot be exec'd directly and run through the system dynamic linker instead
 - Open VSX only: Microsoft Marketplace ToS prohibits third-party access
 - Android phantom process limit (32 system-wide) constrains child process count
 - See [Section 5: System Constraints](#5-system-constraints) for detailed list
@@ -67,6 +67,7 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 | The diffs in `patches/` keep applying across VS Code updates | Rebase effort increases significantly |
 | 4GB RAM devices can run VS Code server + WebView | May need to raise minimum requirement |
 | Google Play Store allows .so-bundled binaries | Need alternative distribution (GitHub, F-Droid) |
+| Google Play accepts a terminal that runs user-built programs through the system linker, as the Termux build on Play does | Confine the exec interceptor to sideloaded installs, or remove it, and keep GitHub as the distribution for that capability |
 
 ---
 
@@ -141,7 +142,7 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 
 | ID | Requirement | Priority | Milestone |
 |----|------------|----------|-----------|
-| FR-MUX-01 | System SHALL display Extra Key Row above the soft keyboard, paged so that no key is narrower than the 48dp touch target. The page count is therefore a function of the device: `KeyPages.forSmallestWidthDp` repacks the five default pages against `smallestScreenWidthDp`, giving five pages at 411dp and wider, six at 360dp and seven at 320dp. Order is preserved, so the sequence is always Tab, Esc, Ctrl, Alt, Shift, a gesture trackpad, `{}`, `()`, then the symbols, then F1 to F12 with Home, End, PageUp and PageDown; a narrow phone splits that same sequence over more pages, moving `()` off page 1 at 360dp and both bracket keys off it at 320dp. There are **no discrete arrow buttons**: the trackpad emits arrow keys as a finger drags, and carries one accessibility action per direction for an assistive input that cannot drag (`KeyPageConfig.kt`, `TrackpadGesture.accumulate`, `ARROW_ACTIONS`) | P1 | M2 |
+| FR-MUX-01 | System SHALL display Extra Key Row above the soft keyboard, paged so that no key is narrower than the 48dp touch target. The page count is therefore a function of the device: `KeyPages.forSmallestWidthDp` repacks the five key pages against `smallestScreenWidthDp`, giving five pages at 411dp and wider, six at 360dp and seven at 320dp, and the quick actions page follows them as the last page of its own, so six, seven and eight in all. Order is preserved, so the sequence is always Tab, Esc, Ctrl, Alt, Shift, a gesture trackpad, `{}`, `()`, then the symbols, then F1 to F12 with Home, End, PageUp and PageDown; a narrow phone splits that same sequence over more pages, moving `()` off page 1 at 360dp and both bracket keys off it at 320dp. The last page holds six shortcut keys, each sent with modifiers of its own whatever is latched: F1, Ctrl+P, Ctrl+`, Ctrl+B, Ctrl+J and Ctrl+S. There are **no discrete arrow buttons**: the trackpad emits arrow keys as a finger drags, and carries one accessibility action per direction for an assistive input that cannot drag (`KeyPageConfig.kt`, `TrackpadGesture.accumulate`, `ARROW_ACTIONS`) | P1 | M2 |
 | FR-MUX-02 | Extra Key Row Ctrl/Alt keys SHALL act as toggles (tap to activate, tap again to deactivate) | P1 | M2 |
 | FR-MUX-03 | System SHALL inject key events from Extra Key Row into WebView | P1 | M2 |
 | FR-MUX-04 | Extra Key Row SHALL show/hide based on soft keyboard visibility | P1 | M2 |
@@ -161,9 +162,9 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 | FR-DEV-03 | System SHALL bundle Git in APK | P0 | M1 |
 | FR-DEV-04 | System SHALL bundle bash in APK | P0 | M1 |
 | FR-DEV-04a | System SHALL bundle tmux in APK as a standalone tool. The editor's terminals are not wrapped in it: the default profile `FirstRunSetup` writes points at bash, and each terminal spawns bash directly through node-pty on a real PTY. The phantom-process saving comes from running the Extension Host and ptyHost as `worker_thread`s | P1 | M1 |
-| FR-DEV-05 | System SHALL deliver Ruby and Java 17 toolchains as on-demand asset packs. Delivery is not Play-only: `ToolchainManager` reads the installing package name and, for any install that did not come from Play, downloads the same toolchains as ZIPs over HTTPS from this project's GitHub Releases, verified against a published sha256 manifest | P2 | M3 |
+| FR-DEV-05 | System SHALL deliver Ruby, Java 17 and C/C++ toolchains as on-demand asset packs. Delivery is not Play-only: `ToolchainManager` reads the installing package name and, for any install that did not come from Play, downloads the same toolchains as ZIPs over HTTPS from this project's GitHub Releases, verified against a published sha256 manifest | P2 | M3 |
 | FR-DEV-06 | A package manager CLI (`vscodroid pkg`) is not built. No such command exists in the app or on the device; additional packages are the user's own business through the terminal. The design it would start from is `docs/04-TECHNICAL_SPEC.md` §8, and it sits on the post-release roadmap | P2 | Post-release |
-| FR-DEV-07 | Prompting for a toolchain by file type is out of scope: nothing watches which files are opened. Discovery is unprompted instead, the welcome walkthrough names the two toolchains and points at the picker, which is also reachable from the app icon's **Manage toolchains** shortcut and from the **VSCodroid: Manage Toolchains** command | P3 | M3 |
+| FR-DEV-07 | Prompting for a toolchain by file type is out of scope: nothing watches which files are opened. Discovery is unprompted instead, the welcome walkthrough names Ruby and Java 17 and points at the picker, which is also reachable from the app icon's **Manage toolchains** shortcut and from the **VSCodroid: Manage Toolchains** command | P3 | M3 |
 | FR-DEV-08 | System SHALL provide Language Picker UI during first-run for selecting toolchains to install | P1 | M3 |
 | FR-DEV-09 | System SHALL allow installing additional toolchains later from the app icon's **Manage toolchains** launcher shortcut (`SplashActivity.publishToolchainShortcut`), matching FR-DEV-07 above, or from the Command Palette entry **VSCodroid: Manage Toolchains**, which the bundled SAF bridge extension registers and which sends the `openToolchainSettings` bridge command. There is still no Settings entry, and `ToolchainActivity` is not exported | P2 | M3 |
 
@@ -205,7 +206,7 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 | NFR-RES-02 | RAM usage (4GB device minimum) | Functional without OOM | P0 |
 | NFR-RES-03 | Phantom process count | At or below `IDLE_BASELINE` of `assets/process-monitor.js` with nothing open; the monitor warns at `SOFT_BUDGET` and calls it a problem at 14, against Android's 32; nothing sheds a process | P0 |
 | NFR-RES-04 | AAB base module, compressed download | Under Play's 500 MB cap, which `scripts/check-bundle-size.py` refuses a bundle over. Last measured at 270.7 MiB, before the workbench internal bundles were pruned from the server tree, so re-measure from the AAB rather than quoting this. **200 MB is not a cap**: it is the size above which a mobile-data user sees a large-download dialog. The on-demand toolchain ZIPs are 10.5 MB for Ruby and 56.5 MB for Java 17, per `ToolchainRegistry.available`, and draw on Play's separate on-demand budget rather than this one | P1 |
-| NFR-RES-05 | Runtime storage (core extracted) | About 575 MiB (603 MB), the asset tree that `BuildConfig.EXTRACTED_ASSET_BYTES` is computed from at build time; about 761 MiB (798 MB) with both toolchains installed, by the `ToolchainRegistry` estimates. The app shows neither total, and every size it does show, such as the shortfall a storage refusal names, is in decimal MB, the unit a phone's storage screen counts in | P1 |
+| NFR-RES-05 | Runtime storage (core extracted) | About 575 MiB (603 MB), the asset tree that `BuildConfig.EXTRACTED_ASSET_BYTES` is computed from at build time; about 765 MiB (802 MB) with Ruby and Java installed, and about 1,013 MiB (1,062 MB) with C/C++ as well, by the `ToolchainRegistry` estimates. The app shows neither total, and every size it does show, such as the shortfall a storage refusal names, is in decimal MB, the unit a phone's storage screen counts in | P1 |
 | NFR-RES-06 | Battery drain during active session | < 15% per hour | P2 |
 | NFR-RES-06a | Battery drain during idle session (foreground, no input) | < 5% per hour | P2 |
 | NFR-RES-07 | V8 heap limit (default) | An eighth of device RAM, held between 256 MB and 768 MB | P1 |
@@ -253,7 +254,7 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 
 | ID | Requirement | Target | Priority |
 |----|------------|--------|----------|
-| NFR-COMPAT-01 | Minimum Android version | 13 (API 33) | P0 |
+| NFR-COMPAT-01 | Minimum Android version | 11 (API 30) | P0 |
 | NFR-COMPAT-02 | Target Android version | 16 (API 36) | P0 |
 | NFR-COMPAT-03 | Architecture | arm64-v8a only | P0 |
 | NFR-COMPAT-04 | Minimum WebView version | Chrome 125+ | P0 |
@@ -269,7 +270,7 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 | NFR-SEC-02 | No telemetry sent to external services | Microsoft telemetry stripped | P0 |
 | NFR-SEC-03 | Server listens on localhost only | No external network exposure | P0 |
 | NFR-SEC-04 | App-private storage for workspace | Android sandbox enforced | P0 |
-| NFR-SEC-05 | All binaries delivered via Play Store (Play install) | Core as .so in base APK; toolchains as on-demand asset packs via Language Picker. A non-Play install fetches the same toolchain ZIPs over HTTPS from GitHub Releases, against a published sha256 manifest | P0 |
+| NFR-SEC-05 | Every binary the app installs is delivered by Play on a Play install; the app never downloads executable code for itself | Core as .so in base APK; toolchains as on-demand asset packs via Language Picker. A non-Play install fetches the same toolchain ZIPs over HTTPS from GitHub Releases, against a published sha256 manifest | P0 |
 | NFR-SEC-06 | Extension sandbox | Extensions run in Extension Host only | P1 |
 
 ### 4.6 Usability (NFR-USE)
@@ -308,7 +309,7 @@ VSCodroid is NOT a cloud IDE, a Termux wrapper, or a custom editor. It is the ac
 
 | Constraint | Details |
 |-----------|---------|
-| W^X enforcement (API 29+) | Cannot write then execute files. Must use .so bundling trick |
+| W^X enforcement (API 29+) | A file under the app's storage cannot be exec'd. The app's own binaries ship as .so; a user's program is started through `/system/bin/linker64`, which the exec interceptor in the terminal does on the user's behalf |
 | Phantom process limit (API 31+) | Max 32 system-wide. Must minimize child processes |
 | Foreground Service restrictions (API 34+) | Must declare specialUse type with justification |
 | 16KB page alignment (API 36) | All native binaries must be compiled with 16KB page support |

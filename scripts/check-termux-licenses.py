@@ -152,8 +152,8 @@ RENAMED = {
 # complete one. A script listed here that stops carrying the function fails the
 # run instead, which is the point. Moving that map is a decision, and this line
 # is where it gets made.
-SONAME_SCRIPTS = ("download-java.sh", "download-python.sh", "download-ruby.sh",
-                  "download-termux-tools.sh")
+SONAME_SCRIPTS = ("download-cpp.sh", "download-java.sh", "download-python.sh",
+                  "download-ruby.sh", "download-termux-tools.sh")
 
 # The body of a `get_sonames()` shell function, and one arm of the case inside
 # it. Read out of the download scripts rather than copied here, so the two
@@ -395,9 +395,9 @@ def main():
         print(f"   no entry  {', '.join(unmapped)}: the build places files for these "
               "and no licence is recorded for any of them")
     # The other direction of the same question. A map entry no package accounts
-    # for is either not a Termux library at all, which is the answer for the two
-    # here today, or a row whose package was renamed out from under it. Printed
-    # rather than failed, because this script cannot tell those apart.
+    # for is either not a Termux library at all, which is the answer for the
+    # three here today, or a row whose package was renamed out from under it.
+    # Printed rather than failed, because this script cannot tell those apart.
     orphans = sorted(name for name, (component, _) in records
                      if name not in claimed and component != "VSCodroid")
     if orphans:

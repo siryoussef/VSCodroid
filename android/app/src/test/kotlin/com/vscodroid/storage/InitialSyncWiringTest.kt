@@ -39,6 +39,9 @@ class InitialSyncWiringTest {
     @TempDir
     lateinit var mirror: File
 
+    @TempDir
+    lateinit var filesDir: File
+
     /**
      * The sync now records what it copied, in a file beside the mirror rather than inside
      * it, so it lands outside the directory `@TempDir` cleans up, and each test method
@@ -139,15 +142,14 @@ class InitialSyncWiringTest {
         resolver = mockk(relaxed = true)
         context = mockk(relaxed = true)
         every { context.contentResolver } returns resolver
+        every { context.filesDir } returns filesDir
     }
 
     /**
      * The upload journal, which is a plain list of absolute paths in `filesDir`.
      *
      * Seeded rather than produced, because producing one means killing the
-     * process mid-write. `context.filesDir` is stubbed per case rather than in
-     * `setUp` so the cases that do not care keep the relaxed mock they have
-     * always had.
+     * process mid-write. Cases inspecting the journal supply its directory.
      */
     private fun journalHolding(path: String, into: File) {
         every { context.filesDir } returns into
@@ -824,18 +826,8 @@ class InitialSyncWiringTest {
         )
     }
 
-    /**
-     * A record that parsed and vouches for nothing is not the same as no record, and
-     * this is the half of that distinction the case above cannot reach.
-     *
-     * It is the ordinary state of a folder on a provider that omits
-     * COLUMN_LAST_MODIFIED: with no clock to compare, every file is kept rather than
-     * refreshed, and a sync that kept everything it saw records nothing. Read as "the
-     * record is silent about this file", every stale mirror copy in such a folder then
-     * gains a `.local-` twin on every open, and nothing ever removes one.
-     */
     @Test
-    fun `a record that vouches for nothing sets nothing aside`() {
+    fun `an empty record does not authorize discarding a differing mirror copy`() {
         deviceFolderHolding("notes.txt", "from the device", 1_700_000_000_000)
         sync()
 
@@ -846,10 +838,11 @@ class InitialSyncWiringTest {
         deviceFolderHolding("notes.txt", "changed on the device", 1_700_000_120_000)
         sync()
 
-        assertEquals(
-            listOf("notes.txt"), mirror.list()?.sorted(),
-            "a record that names nothing was read as silence about this file, so the " +
-                "workspace gained a spare copy of it",
+        assertEquals("changed on the device", File(mirror, "notes.txt").readText())
+        assertTrue(
+            mirror.listFiles()!!.filter { it.name != "notes.txt" && it.isFile }
+                .any { it.readText() == "from the device" },
+            "the empty record did not vouch for the mirror copy, which still needs preservation",
         )
     }
 

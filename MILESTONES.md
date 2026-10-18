@@ -281,7 +281,7 @@ M6 (Release)   → Play Store release
    - [x] Symlink: `make` → `libmake.so` via `setupToolSymlinks()`
 
 3. **npm integration** (`FirstRunSetup.createNpmWrappers`)
-   - [x] npm/npx defined as bash functions in `.bashrc` (not script wrappers; SELinux denies `execute_no_trans` under `filesDir`, while `dlopen` of a `.node` addon there still works)
+   - [x] npm/npx defined as bash functions in `.bashrc` (not script wrappers; SELinux denies `execute_no_trans` under `filesDir` outside a preloaded shell, while `dlopen` of a `.node` addon there still works)
    - [x] Functions invoke Node.js with `npm-cli.js` entry point from `usr/lib/node_modules/npm/`
    - [x] `.npmrc` created with `script-shell` pointing to `libbash.so`
 
@@ -409,15 +409,16 @@ M6 (Release)   → Play Store release
    - [x] Extensions load correctly under worker_thread mode
    - [x] Reduces phantom process count by 2 (ExtHost + ptyHost invisible in `/proc`)
 
-2. **On-demand toolchain download scripts** (`scripts/download-ruby.sh`, `download-java.sh`)
+2. **On-demand toolchain download scripts** (`scripts/download-ruby.sh`, `download-java.sh`, `download-cpp.sh`)
    - [x] Ruby from Termux `ruby` + libgmp + libyaml. Unpacked size is recorded in `ToolchainRegistry`, which is what every gate reads: 39 MB today
-   - [x] Java from Termux `openjdk-17` + libandroid-shmem + libandroid-spawn. 156 MB unpacked; the registry read 146 until the JDK grew past it
+   - [x] Java from Termux `openjdk-17` + libandroid-shmem + libandroid-spawn. 155.5 MB unpacked; the registry records 160 MB, which left 4.5 MB of room where 156 left half a megabyte, and read 146 until the JDK grew past it
+   - [x] C/C++ from Termux `clang`, `libllvm`, `lld`, `llvm`, `libcompiler-rt`, `ndk-sysroot`, `libxml2` and the headers of `python`, minus what the base APK already ships. 254.0 MB unpacked in 3,790 files (the registry records 260 MB) and a 73.7 MB ZIP. Its programs start only through the terminal's exec interceptor, so its manifest is `preloadOnly` and the card says that it does not work with `LD_PRELOAD` set to null
    - [x] Each script: download .deb → extract → place in asset pack module → strip → write manifest
    - [x] Each script fails the build on any symbolic link anywhere in the pack. Neither delivery path can carry one: an asset pack cannot hold a link, and `ToolchainManager.extractZip` writes it as a text file holding the target path
-   - Go shipped here and was withdrawn: it ran but could not compile, because Android refuses to execute a file under the app's data directory and `go build` forks its own compiler.
+   - Go shipped here and was withdrawn: it ran but could not compile, because `go build` starts its compiler from the app's data directory with a raw `execve` system call, which Android refuses there. The terminal's exec interceptor replaces only the libc exec functions and never sees that call, so it does not change Go's case.
 
 3. **Play Asset Delivery integration** (`ToolchainManager.kt`, `ToolchainRegistry.kt`)
-   - [x] Gradle asset pack modules (`toolchain_ruby/`, `toolchain_java/`)
+   - [x] Gradle asset pack modules (`toolchain_ruby/`, `toolchain_java/`, `toolchain_cpp/`)
    - [x] `ToolchainManager`: fetch, progress tracking, copy to filesDir, chmod +x, symlinks, uninstall
    - [x] `ToolchainRegistry`: catalog of available toolchains with sizes
    - [x] `Environment.kt`: dynamic toolchain env vars merged into server process
@@ -582,6 +583,7 @@ _Order: audit code → configure release build → test on devices → validate 
     - [x] Content rating questionnaire
     - [x] Foreground service permission declaration (video demo + written justification)
     - [x] Prepare for binary execution policy review (explain .so trick, local-only execution): passed; production access granted
+    - [ ] Re-state the binary execution explanation for the release that lets the terminal run user programs: the .so delivery is unchanged, and user programs run through the system linker inside the sandbox (see docs/10-RELEASE_PLAN.md section 5.3)
 
 13. **Launch**
     - [x] Internal testing track: AAB uploaded (versionCode 2)
@@ -661,7 +663,7 @@ Features planned for after Play Store launch, prioritized by user demand.
 ### Additional On-demand Toolchains
 
 - **Rust** (rustc + cargo, ~100 MB): high demand, self-contained
-- **C/C++** (clang/LLVM from Termux, ~84 MB): large, needs careful stripping
+- **C/C++** (clang/LLVM from Termux, ~84 MB): shipped as `toolchain_cpp` in 1.5.0, 254 MB unpacked and a 74 MB ZIP once stripped, and only through the terminal's exec interceptor
 - Delivered via same Play Asset Delivery pipeline as Ruby and Java 17
 
 ### Future Enhancements

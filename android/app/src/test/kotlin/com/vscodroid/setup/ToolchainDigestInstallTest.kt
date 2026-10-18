@@ -274,6 +274,8 @@ class ToolchainDigestInstallTest {
             zip.putNextEntry(ZipEntry("toolchain_test.json"))
             zip.write("""{"name":"test","installRoot":"usr/opt/test"}""".toByteArray())
             zip.closeEntry()
+            zip.putNextEntry(ZipEntry("usr/opt/test/"))
+            zip.closeEntry()
             if (payloadBytes > 0) {
                 // Random bytes from a fixed seed, so the entry deflates to
                 // roughly its own size: a compressible filler would leave the
@@ -321,6 +323,7 @@ class ToolchainDigestInstallTest {
         every { Logger.e(any(), any(), any()) } just Runs
 
         packManager = mockk(relaxed = true)
+        every { packManager.removePack(any()) } answers { completedPackRemoval() }
         mockkStatic(AssetPackManagerFactory::class)
         every { AssetPackManagerFactory.getInstance(any()) } returns packManager
 
@@ -1178,7 +1181,7 @@ class ToolchainDigestInstallTest {
      *
      * `install` handed one figure to the download for two jobs. The space gate
      * needs the unpacked size, and the bar needs the transfer size, and they
-     * differ by about three times: for Java 17, 156,000,000 against a 55,400,000
+     * differ by about three times: for Java 17, 160,000,000 against a 56,500,000
      * byte ZIP. A response with no Content-Length -- a chunked proxy on the path
      * -- has nothing else to divide by, so the bar topped out near 30% and sat
      * there for the rest of the transfer.

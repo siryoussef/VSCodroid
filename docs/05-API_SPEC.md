@@ -570,7 +570,7 @@ fun getDeviceInfo(authToken: String): String
 //   "android": 36,
 //   "api": 36,
 //   "manufacturer": "Google",
-//   "vscodroid_version": "1.4.0",
+//   "vscodroid_version": "1.5.0",
 //   "screen_width": 1080,
 //   "screen_height": 2400,
 //   "screen_density": 2.625,
@@ -739,8 +739,9 @@ fun generateBugReport(authToken: String): String
 //   reason by name (ANR, LOW_MEMORY, CRASH_NATIVE, ...), status,
 //   importance, pss and rss, and the system's description
 // - The last 20 renderer deaths, from renderer.log under
-//   Environment.getLogsDir, which both onRenderProcessGone overrides write
-//   through CrashReporter.recordRendererDeath: time, crashed or killed by
+//   Environment.getLogsDir, which the two onRenderProcessGone overrides for the
+//   editor's WebView write through CrashReporter.recordRendererDeath, and the
+//   colour probe's own WebView does not: time, crashed or killed by
 //   the system, and the renderer priority at exit
 // - How many crash logs exist, plus the text of the three most recent
 // - The last 200 lines of the Node server's output, read from `server.log`
@@ -812,8 +813,8 @@ fun listSshKeys(authToken: String): String
 
 #### Toolchain Control
 
-`ToolchainRegistry.available` is the source for what these can name. It lists Ruby and
-Java 17, and nothing else.
+`ToolchainRegistry.available` is the source for what these can name. It lists Ruby,
+Java 17 and C/C++, and nothing else.
 
 ```kotlin
 @JavascriptInterface
@@ -825,7 +826,7 @@ fun getAvailableToolchains(authToken: String): String
 
 @JavascriptInterface
 fun getInstalledToolchains(authToken: String): String
-// JSON array of installed SHORT names, e.g. ["ruby","java"]. "[]" if refused.
+// JSON array of installed SHORT names, e.g. ["ruby","java","cpp"]. "[]" if refused.
 
 @JavascriptInterface
 fun installToolchain(name: String, authToken: String)   // note: token LAST
@@ -956,10 +957,11 @@ Added by `server.js` itself, not passed from Kotlin:
 
 - `--accept-server-license-terms`
 - `--without-browser-env-var`: without it the server exports `BROWSER` pointing at
-  `bin/helpers/browser.sh`, a shebang script under `filesDir` that SELinux will not
-  exec and that calls a `$ROOT/node` the packaged tree does not have. Node's browser
-  helpers prefer `$BROWSER` over `xdg-open`, so with it set they stop at a script that
-  cannot run; unset, they reach the `xdg-open` row the exec table provides.
+  `bin/helpers/browser.sh`, a shebang script under `filesDir`. The server and the
+  extension host run without the terminal's exec interceptor, so SELinux refuses to
+  exec it there. Node's browser helpers prefer `$BROWSER` over `xdg-open`, so with it
+  set they stop at a script that cannot run; unset, they reach the `xdg-open` row the
+  exec table provides.
 - `--disable-workspace-trust`: without it every folder opens in Restricted Mode and
   most extensions never activate. The `security.workspace.trust.enabled` setting
   cannot substitute: it is APPLICATION-scoped, and the WEB CLIENT takes only the
@@ -1223,9 +1225,9 @@ interface ToolchainManager {
 }
 
 interface Toolchain {
-  id: string; // "ruby", "java" -- those two. Rust and C/C++ have no module, no
-              // asset pack and no ToolchainRegistry entry; they were planned and
-              // deferred, and naming them here read as a shipped option
+  id: string; // "ruby", "java", "cpp" -- those three. Rust has no module, no
+              // asset pack and no ToolchainRegistry entry; it was planned and
+              // deferred, and naming it here read as a shipped option
   name: string; // "Java 17"
   version: string; // "17"
   sizeMb: number; // 146

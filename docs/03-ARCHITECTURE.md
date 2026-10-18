@@ -73,8 +73,8 @@ flowchart TD
 **External Systems:**
 - **Open VSX**: Extension search, download, update (HTTPS)
 - **GitHub/GitLab**: Remote git operations (HTTPS/SSH)
-- **Play Asset Delivery**: Ruby and Java 17 packs, for installs whose `installingPackageName` is `com.android.vending` or Play's legacy `com.google.android.feedback` (`ToolchainManager.PLAY_INSTALLERS`)
-- **GitHub Releases**: the same two toolchains as ZIPs under `releases/latest`, for every other install source
+- **Play Asset Delivery**: Ruby, Java 17 and C/C++ packs, for installs whose `installingPackageName` is `com.android.vending` or Play's legacy `com.google.android.feedback` (`ToolchainManager.PLAY_INSTALLERS`)
+- **GitHub Releases**: the same toolchains as ZIPs under `releases/latest`, for every other install source
 
 Termux's package repository is a build-time source, not a runtime one: `scripts/download-node.sh`,
 `download-python.sh` and `download-termux-tools.sh` fetch the runtime and the tools from it while the
@@ -258,7 +258,7 @@ owning extension is what frees a slot.
 
 **Status**: Accepted (platform requirement)
 
-**Context**: Android 10+ enforces W^X (write-xor-execute). Cannot download and execute arbitrary binaries.
+**Context**: Android 10+ enforces W^X (write-xor-execute): a file under the app's storage cannot be exec'd. The app's own binaries therefore ship where the package manager extracts them with the execute bit. A program the user builds or installs is a different case, handled at run time by starting the system dynamic linker on it, and is covered by the terminal's exec interceptor rather than by this decision.
 
 **Decision**: Bundle all executables as .so files in jniLibs/arm64-v8a/ directory.
 
@@ -268,7 +268,7 @@ owning extension is what frees a slot.
 - Termux, UserLAnd, and other apps use this approach
 - Requires: Gradle `packagingOptions { jniLibs { useLegacyPackaging = true } }`
 
-**Consequence**: All core binaries (Node.js, Python, Git, bash, tmux, make, ripgrep, ssh) bundled as .so files in the base APK. The two on-demand toolchains, Ruby and Java 17, are delivered as asset packs via Play Store; the user picks them in the first-run toolchain picker (`SplashActivity.showToolchainPicker()`, offered by `continueAfterSetup()` on every launch that gets past setup, until its Continue or Skip button records `toolchain_picker_shown`) and Play Store downloads them automatically. Toolchains are never inside the APK on any channel: `ToolchainManager.install()` picks a delivery path at runtime, and both paths converge on `installFromDirectory()`, which copies the payload into `filesDir/usr`, chmods the binaries its manifest names, and creates its symlinks, so installed toolchains survive app updates.
+**Consequence**: All core binaries (Node.js, Python, Git, bash, tmux, make, ripgrep, ssh) bundled as .so files in the base APK. The three on-demand toolchains, Ruby, Java 17 and C/C++, are delivered as asset packs via Play Store; the user picks them in the first-run toolchain picker (`SplashActivity.showToolchainPicker()`, offered by `continueAfterSetup()` on every launch that gets past setup, until its Continue or Skip button records `toolchain_picker_shown`) and Play Store downloads them automatically. Toolchains are never inside the APK on any channel: `ToolchainManager.install()` picks a delivery path at runtime, and both paths converge on `installFromDirectory()`, which copies the payload into `filesDir/usr`, chmods the binaries its manifest names, and creates its symlinks, so installed toolchains survive app updates. This decision covers what the app installs. It does not restrict what a user runs: the terminal's exec interceptor starts user programs through `/system/bin/linker64`, which is what `termux-exec` does in the Termux build on Google Play. The C/C++ toolchain is the one pack that depends on it: a compiler forks its linker, so its programs start only through that interceptor and fail where it is off (`"LD_PRELOAD": null`) or absent (an extension that starts a process itself).
 
 ---
 
@@ -284,9 +284,9 @@ owning extension is what frees a slot.
 - System WebView updates automatically via Play Store
 - No additional binary size (Chromium adds 100MB+)
 - WebView on Android is Chromium-based, supports all VS Code needs
-- Minimum WebView 125+: the workbench positions every webview (Markdown preview, extension panels, notebook outputs) with CSS anchor positioning, which Chromium has from 125. Android 13 shipped with 105, so a WebView that never updated is below it
+- Minimum WebView 125+: the workbench positions every webview (Markdown preview, extension panels, notebook outputs) with CSS anchor positioning, which Chromium has from 125. Android 13 shipped with 105 and the API 30 emulator image carries 91, so a WebView that never updated is below it
 
-**Trade-off**: Dependent on user's WebView version. Mitigation: a runtime version check (`MainActivity.checkWebViewVersion`) warns below the floor; the editor still opens, but its webviews stay blank.
+**Trade-off**: Dependent on user's WebView version. Mitigation: a runtime version check (`MainActivity.checkWebViewVersion`) warns below the floor. Just below it the editor still opens, but its webviews stay blank; far below it, such as the 91 an API 30 image ships with, the workbench bundle does not parse and the page stays blank behind the dialog.
 
 ---
 
@@ -296,7 +296,7 @@ owning extension is what frees a slot.
 
 **Context**: Node.js server must keep running when app is backgrounded. Android aggressively kills background processes.
 
-**Decision**: Use Foreground Service with `specialUse` type (Android 14+ requirement).
+**Decision**: Use Foreground Service with `specialUse` type (Android 14+ requirement). The manifest declares the type for every release; `ServiceCompat.startForeground` (androidx.core 1.19.0, read from its bytecode) masks the type with `0xFF` below Android 14, so there the platform is told none.
 
 **Rationale**:
 - Foreground Service prevents process killing
@@ -312,7 +312,7 @@ owning extension is what frees a slot.
 
 **Status**: Accepted
 
-**Context**: VSCodroid offers language toolchains beyond the bundled core: Ruby and Java 17. Putting them in the base APK would make it very large, and most users want at most one of them. Options: (a) On-demand download from CDN, (b) Play Store install-time asset packs, (c) Play Store on-demand asset packs.
+**Context**: VSCodroid offers language toolchains beyond the bundled core: Ruby, Java 17 and C/C++. Putting them in the base APK would make it very large, and most users want at most one of them. Options: (a) On-demand download from CDN, (b) Play Store install-time asset packs, (c) Play Store on-demand asset packs.
 
 **Decision**: Use Play Store on-demand asset packs for toolchain delivery, with a toolchain picker UI during first-run.
 
@@ -322,11 +322,11 @@ owning extension is what frees a slot.
   `scripts/check-bundle-size.py`; the last measurement was around 270 MiB compressed, and it
   moves with every VS Code bump, so re-measure from the AAB rather than quoting a figure
 - User selects needed languages during first-run, so only what they ask for is downloaded
-- `android/toolchain_ruby/build.gradle.kts` and `android/toolchain_java/build.gradle.kts` each declare `dynamicDelivery { deliveryType.set("on-demand") }`, and `ToolchainRegistry.available` is the single list the picker and the manage screen read
+- `android/toolchain_ruby/build.gradle.kts`, `android/toolchain_java/build.gradle.kts` and `android/toolchain_cpp/build.gradle.kts` each declare `dynamicDelivery { deliveryType.set("on-demand") }`, and `ToolchainRegistry.available` is the single list the picker and the manage screen read
 - Play Store handles download/install automatically (no manual steps for user)
 - Play Store optimizes delivery per device (only arm64 assets delivered)
 - No custom CDN infrastructure needed for toolchain hosting
-- All binaries delivered via Play Store, simplifying policy compliance
+- Every binary the app installs is delivered by Play on a Play install, which keeps the app clear of the policy sentence on downloading executable code
 - Additional languages can be added later by two routes, and there is still no Settings entry:
   the launcher shortcut `SplashActivity.publishToolchainShortcut()` pushes (long-press the icon,
   **Manage toolchains**), and the command palette entry **VSCodroid: Manage Toolchains**, which
@@ -565,9 +565,10 @@ rotated to its last lines once it outgrows a byte cap, so it cannot grow without
 That directory holds more than this app writes: `ProcessManager.startServer` points the
 server's `--logsPath` at it, and the server's own log service writes `remoteagent.log`
 there, Extension Host output included. Nothing writes `exthost.log` under any name.
-`renderer.log` there is this app's own: both `onRenderProcessGone` overrides note each
-renderer death in it through `CrashReporter.recordRendererDeath`, since the death otherwise
-reaches Logcat alone, and a report quotes the last 20 lines.
+`renderer.log` there is this app's own: the two `onRenderProcessGone` overrides for the
+editor's WebView note each renderer death in it through `CrashReporter.recordRendererDeath`,
+since the death otherwise reaches Logcat alone, and a report quotes the last 20 lines. The
+colour probe's own WebView records nothing.
 
 ### 8.3 Configuration
 
@@ -586,12 +587,12 @@ reaches Logcat alone, and a report quotes the last 20 lines.
 |-------|-----------|---------|
 | Android app | Kotlin, compiled to JVM target 17 | The version AGP 9.3.1 brings (`agp` in `android/gradle/libs.versions.toml`) |
 | Build system | Gradle (Kotlin DSL), pinned by the wrapper and its `distributionSha256Sum` | 9.7.1 (`android/gradle/wrapper/gradle-wrapper.properties`) |
-| UI framework | Android View + WebView | API 33-36 |
+| UI framework | Android View + WebView | API 30-36 |
 | Node.js | Node.js from Termux's `nodejs-lts` package, installed as `libnode.so` by `scripts/download-node.sh` | 24.18.0; the pinned VS Code tag's `remote/.npmrc` `target` names 24.20.0, the same major and so the same `NODE_MODULE_VERSION` |
 | VS Code | Code - OSS, built from MIT source with the diffs in `patches/` | 1.139.1 (pinned in the `VSCODE_VERSION` file at the repo root) |
 | Extension Host | VS Code Extension Host as a worker_thread (patch `0004`); the Pty Host likewise (patch `0003`) | Same as VS Code |
 | Terminal | node-pty spawning bash on a real PTY (tmux bundled as a standalone tool) | Latest |
-| Toolchain delivery | Play Asset Delivery packs, or `releases/latest` ZIPs for non-Play installs | Ruby, Java 17 |
+| Toolchain delivery | Play Asset Delivery packs, or `releases/latest` ZIPs for non-Play installs | Ruby, Java 17, C/C++ |
 | SCM | Git from Termux, as `libgit.so` and `libgit-remote-curl.so` plus `usr/lib/git-core` | Whatever the Termux index names at build time |
 | Python | Python 3 from Termux, fetched by `scripts/download-python.sh` | Whatever the Termux index names at build time; read it from `assets/usr/lib/libpython*.so` |
 | C++ stdlib | `libc++_shared.so` from Termux's `libc++` package, in `assets/usr/lib` | Whatever `scripts/download-termux-tools.sh` resolves |
