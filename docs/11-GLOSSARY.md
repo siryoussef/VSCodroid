@@ -116,6 +116,12 @@ A protocol where one process calls functions in another process over a communica
 **SAF (Storage Access Framework)**
 Android's mechanism for accessing files outside an app's private directory. Uses system file picker UI. An alternative to broad storage permissions.
 
+**All Files Access**
+The optional `MANAGE_EXTERNAL_STORAGE` permission, granted by the user on Android's dedicated settings page (or out-of-band via `adb shell appops set` or the Shizuku API). When held, a folder picked through the SAF picker opens at its real POSIX path with no mirrored copy (`storage/DirectPath.kt`), so `.git`, `node_modules` and large files work and external edits are live. Without it, the SAF mirror is used unchanged.
+
+**Shizuku**
+An app that runs a shell-identity (ADB or root) service other apps can borrow through a binder, so privileged operations work without the app itself holding those privileges. VSCodroid's client (`dev.rikka.shizuku:api`) reports the backend identity in **VSCodroid: Storage Access** and can request the Shizuku permission; it never executes shell commands on its own without the user asking.
+
 **Sideloading**
 Installing an APK outside Google Play (for example from GitHub Releases). There is no separate sideload variant, `android/app/build.gradle.kts` declares no product flavors, and no build bundles a toolchain. What differs is how toolchains arrive, `ToolchainManager` reads the installing package name at runtime and falls back from Play Asset Delivery to an HTTPS download from GitHub Releases when the installer was not Play.
 

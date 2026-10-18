@@ -131,6 +131,40 @@
           pkgs = pkgsFor system;
           androidSdk = mkAndroidSdk pkgs;
         in rec {
+          # An FHS chroot for the tools that cannot run on NixOS as-is. The
+          # Android NDK ships dynamically linked executables that expect the
+          # FHS layout (/lib64/ld-linux-x86-64.so.2), and the build scripts
+          # reach for bsdtar and patchelf by name. buildFHSEnv supplies all
+          # three without touching the host system:
+          #
+          #   nix run .#fhs -- bash scripts/build-all.sh
+          fhs = pkgs.buildFHSEnv {
+            name = "vscodroid-fhs";
+            targetPkgs = p: with p; [
+              jdk17
+              nodejs_24
+              python3
+              git
+              cmake
+              ninja
+              gnumake     # CMake's "Unix Makefiles" generator needs /usr/bin/make
+              curl
+              which
+              bash
+              coreutils
+              libarchive  # bsdtar: reads the .deb ar archives
+              zstd
+              patchelf
+              file
+              gnutar
+              gzip
+              xz
+              zlib       # libz.so.1: the NDK clang links against it
+              ncurses    # libtinfo.so: the NDK llvm tools link against it
+            ];
+            runScript = "bash";
+          };
+
           apk = mkApk {
             inherit pkgs androidSdk;
             release = false;
@@ -276,6 +310,36 @@
               echo "========================================="
             '';
           };
+
+          # nix develop .#fhs -- the FHS shell for building on NixOS. The
+          # default shell cannot run the NDK toolchain; this one can.
+          # .env is what nix develop expects from a buildFHSEnv.
+          fhs = (pkgs.buildFHSEnv {
+            name = "vscodroid-fhs";
+            targetPkgs = p: with p; [
+              jdk17
+              nodejs_24
+              python3
+              git
+              cmake
+              ninja
+              gnumake
+              curl
+              which
+              bash
+              coreutils
+              libarchive
+              zstd
+              patchelf
+              file
+              gnutar
+              gzip
+              xz
+              zlib
+              ncurses
+            ];
+            runScript = "bash";
+          }).env;
         }
       );
     };

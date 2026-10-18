@@ -20,6 +20,7 @@ playAssetDelivery = "2.2.2"
 constraintlayout = "2.2.2"
 viewpager2 = "1.1.0"
 browser = "1.10.0"
+shizuku = "13.1.5"
 androidxTestExt = "1.3.0"
 androidxTestRunner = "1.7.0"
 androidxTestRules = "1.7.0"
@@ -48,6 +49,8 @@ mockk-android = { group = "io.mockk", name = "mockk-android", version.ref = "moc
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 androidx-viewpager2 = { group = "androidx.viewpager2", name = "viewpager2", version.ref = "viewpager2" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
+shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
+shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExt" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidxTestRules" }

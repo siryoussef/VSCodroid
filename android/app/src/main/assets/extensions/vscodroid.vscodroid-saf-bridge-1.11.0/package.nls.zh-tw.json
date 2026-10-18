@@ -8,6 +8,7 @@
   "command.copySshPublicKey": "VSCodroid: 複製 SSH 公開金鑰",
   "command.showStorageUsage": "VSCodroid: 檢視儲存空間用量",
   "command.manageDeviceFolders": "VSCodroid: 管理裝置資料夾的儲存空間",
+  "command.storageAccess": "VSCodroid: 儲存體存取",
   "command.clearCaches": "VSCodroid: 清除快取",
   "command.manageToolchains": "VSCodroid: 管理工具鏈",
   "command.toggleExtraKeyRow": "VSCodroid: 切換額外按鍵列",

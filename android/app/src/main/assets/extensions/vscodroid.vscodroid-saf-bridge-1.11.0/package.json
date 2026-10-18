@@ -67,6 +67,10 @@
       {
         "command": "vscodroid.copyBugReport",
         "title": "%command.copyBugReport%"
+      },
+      {
+        "command": "vscodroid.storageAccess",
+        "title": "%command.storageAccess%"
       }
     ],
     "menus": {
@@ -86,6 +90,10 @@
         {
           "command": "vscodroid.about",
           "group": "remote_90_vscodroid_about"
+        },
+        {
+          "command": "vscodroid.storageAccess",
+          "group": "remote_20_vscodroid_keys"
         }
       ]
     },

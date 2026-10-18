@@ -766,6 +766,20 @@ step "Debug adapter"
 # where the system is.
 python3 "$SCRIPT_DIR/patch-js-debug-env.py" "$OUT"
 
+step "Copilot BYOK"
+# The bundled Copilot extension gates all 3rd-party model providers (Custom
+# Endpoint, OpenAI, Anthropic, Gemini, OpenRouter, Azure, xAI, Ollama) behind
+# a token entitlement check that only passes for paid Copilot Individual
+# accounts carrying a `client_byok: "1"` claim. Users on Copilot Free, Copilot
+# Business (without the org-level BYOK flag), or anyone who has no Copilot
+# subscription at all cannot add any custom model provider.
+#
+# This is the same family as patch-js-debug-env.py: the Copilot extension is
+# compiled from source in the Copilot stage above (compile-copilot-extension-
+# build) and is a separate artifact from the VS Code source tree, so the fix
+# belongs here rather than in patches/.
+python3 "$SCRIPT_DIR/patch-copilot-byok.py" "$OUT"
+
 step "Patch manifest"
 # What the fingerprints cannot see. A fingerprint row proves a patch arrived, not
 # which version of it did: editing an already-matching patch leaves every gate
@@ -791,6 +805,13 @@ fail=0
 # packaged bundles, and that the product.json key set has not drifted) stay here,
 # because only this side has the patches and the expectation file.
 python3 "$SCRIPT_DIR/verify-server-tree.py" "$OUT" || fail=1
+
+# Confirm that the Copilot BYOK gate was lifted and the customoai guard removed.
+# This mirrors the check in patch-copilot-byok.py itself; running it here as
+# well catches a tree where the stage ran but its post-patch assertion failed
+# silently, or where the Copy stage (in package-assets.sh) overwrote the tree
+# from the unpatched cache.
+python3 "$SCRIPT_DIR/patch-copilot-byok.py" --check "$OUT" || fail=1
 
 # Every patch has to be proven present in the packaged output, not merely
 # applied to the source. The expectations and the reasoning live in

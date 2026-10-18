@@ -430,6 +430,14 @@ M6 (Release)   → Play Store release
    - [x] Download progress UI, error handling, retry (`SplashActivity.startDownloads()`, `layout_toolchain_progress.xml`, `Action.RETRY/CANCEL`)
    - [x] Size display per toolchain before download (`ToolchainPickerAdapter` shows `~${formatSize(info.estimatedSize)}`)
 
+5. **Privileged storage access** (`PrivilegedAccess.kt`, `DirectPath.kt`, Shizuku API)
+   - [x] `MANAGE_EXTERNAL_STORAGE` declared as optional; granted only by the user on the All Files Access settings page, via an `adb shell appops set` command shown in the extension, or through the Shizuku API
+   - [x] `PrivilegedAccess`: reports All Files Access, Shizuku backend (ADB/root), and root-shell presence; the direct-vs-mirror decision lives here
+   - [x] `DirectPath`: SAF tree/document URI → POSIX path, so a picked folder opens at its real location with no mirror when All Files Access is held (FR-FS-08)
+   - [x] File-manager hand-off: `ACTION_VIEW`/`ACTION_EDIT` directory URIs from ExternalStorageProvider open their parent folder; unresolvable URIs fall back to the SAF picker (FR-FS-09)
+   - [x] `VSCodroid: Storage Access` command in the SAF bridge extension: status screen, grant buttons, adb-command clipboard copy
+   - [x] Shizuku client (`dev.rikka.shizuku:api` + `:provider` 13.1.5); its permission result refreshes the page so the extension updates its status
+
 ### Success Criteria:
 
 - [x] Extension Host runs as worker_thread (phantom process count reduced)
@@ -437,6 +445,7 @@ M6 (Release)   → Play Store release
 - [x] On-demand toolchains delivered via Play Asset Delivery (Go, Ruby, Java)
 - [x] ToolchainManager handles full lifecycle (install, uninstall, env vars, symlinks)
 - [x] Language Picker UI works during first-run, from the launcher icon's **Manage toolchains** shortcut and from the Command Palette (`SplashActivity` + `ToolchainActivity`)
+- [x] Privileged storage: with All Files Access granted a picked folder opens at its real path (no mirror, `.git` intact); without it the SAF mirror is unchanged (FR-FS-08, FR-FS-09)
 
 ### Estimated Effort: 3-4 weeks
 

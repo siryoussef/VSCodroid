@@ -8,6 +8,7 @@
   "command.copySshPublicKey": "VSCodroid: SSH ortak anahtarını kopyala",
   "command.showStorageUsage": "VSCodroid: Depolama kullanımını göster",
   "command.manageDeviceFolders": "VSCodroid: Cihaz klasörlerinin depolamasını yönet",
+  "command.storageAccess": "VSCodroid: Depolama Erişimi",
   "command.clearCaches": "VSCodroid: Önbellekleri temizle",
   "command.manageToolchains": "VSCodroid: Araç zincirlerini yönet",
   "command.toggleExtraKeyRow": "VSCodroid: Ek tuş satırını göster veya gizle",

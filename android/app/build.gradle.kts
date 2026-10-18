@@ -485,6 +485,10 @@ dependencies {
     // Chrome Custom Tabs (GitHub OAuth, external auth flows)
     implementation(libs.androidx.browser)
 
+    // Privileged capability discovery and user-mediated ADB/root access.
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
+
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)

@@ -126,7 +126,7 @@ Developers increasingly work across multiple devices, yet Android (the world's m
 | Android Back Button | Minimizes the app (`moveTaskToBack`); the page is not asked first, and Esc on the Extra Key Row is what closes a palette | M2 |
 | Screen Orientation | Portrait, landscape, split-screen support | M2 |
 | Crash Recovery | WebView crash recovery, Node.js auto-restart | M2 |
-| ~~"Open with VSCodroid"~~ | **Out of scope.** A `content://` URI has no POSIX path and the server only ever sees POSIX paths, so an opened file would have to be materialised locally and every save would write to a copy. Folders open through the SAF picker instead, which has the sync engine that makes write-back work. See `AndroidManifest.xml`, where the reasoning sits in place of the filters | withdrawn |
+| ~~"Open with VSCodroid"~~ | **Out of scope for individual files.** A `content://` URI has no POSIX path and the server only ever sees POSIX paths, so an opened file would have to be materialised locally and every save would write to a copy. **Partially reopened in M5 for folders:** an ExternalStorageProvider directory hand-off (`ACTION_VIEW`/`ACTION_EDIT`) maps to a real path via `DirectPath.resolveContentUri` and opens its parent directory; other providers fall back to the SAF picker with a notice. See `AndroidManifest.xml`, where the reasoning sits beside the filters | withdrawn → folders M5 |
 | Bundled Python | Python 3 + pip, ready to use | M3 |
 | Terminal Sessions | Each terminal spawns bash directly on its own PTY through node-pty; tmux ships as a standalone tool | M1 |
 

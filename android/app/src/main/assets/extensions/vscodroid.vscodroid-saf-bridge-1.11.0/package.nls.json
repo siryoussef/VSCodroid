@@ -8,6 +8,7 @@
   "command.copySshPublicKey": "VSCodroid: Copy SSH Public Key",
   "command.showStorageUsage": "VSCodroid: Show Storage Usage",
   "command.manageDeviceFolders": "VSCodroid: Manage Device Folder Storage",
+  "command.storageAccess": "VSCodroid: Storage Access",
   "command.clearCaches": "VSCodroid: Clear Caches",
   "command.manageToolchains": "VSCodroid: Manage Toolchains",
   "command.toggleExtraKeyRow": "VSCodroid: Toggle Extra Key Row",

@@ -15,6 +15,10 @@
     <!-- Notifications: server status in notification shade -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+        <!-- Optional, user-granted All Files Access. It permits direct workspaces on
+            shared storage; SAF remains available when it is not granted. -->
+        <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <!-- largeHeap raises the ART heap CAP for this process and nothing else:
          it does not reserve memory and no Kotlin here reads it. On an API 33
          arm64 device with 4 GB of RAM the cap moves from
@@ -59,6 +63,15 @@
         android:largeHeap="true"
         android:theme="@style/Theme.VSCodroid"
         tools:targetApi="34">
+
+           <!-- Receives the Shizuku/Sui binder. The provider's signature-only
+               permission prevents ordinary apps from obtaining it through us. -->
+           <provider
+              android:name="rikka.shizuku.ShizukuProvider"
+              android:authorities="${applicationId}.shizuku"
+              android:exported="true"
+              android:multiprocess="false"
+              android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- Splash screen: shown during setup (first-run extraction, the
              toolchain picker and its downloads). MainActivity, not this,
@@ -158,7 +171,38 @@
                 <data android:scheme="vscodroid" android:host="callback" />
             </intent-filter>
 
-            <!-- No VIEW filter for file:// or content:// here, and that is deliberate.
+            <!-- "Open with VSCodroid" from a file manager, delivering a content:// or
+                 file:// URI.
+
+                 Only ExternalStorageProvider URIs can be resolved to a real POSIX path
+                 (DirectPath.resolveContentUri), so the server can open the file's parent
+                 directory. URIs from other providers (Downloads, cloud, …) are logged and
+                 ignored with a toast, just like the old stub; no copy is made and no
+                 edit is lost.
+
+                 The filter is BROWSABLE so file-manager apps that fire ACTION_VIEW into
+                 the chooser find us; BROWSABLE alone does not expose this to arbitrary
+                 web pages because data schemes are explicitly typed. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Directories from ExternalStorageProvider -->
+                <data android:scheme="content"
+                    android:host="com.android.externalstorage.documents"
+                    android:mimeType="vnd.android.document/directory" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Bare file:// URIs from legacy file managers and adb am -->
+                <data android:scheme="file" android:mimeType="*/*" />
+            </intent-filter>
+
+            <!-- No generic VIEW filter for arbitrary content:// URIs here, and that is deliberate.
                  Two of them used to advertise this app for about twenty source-file
                  extensions, and nothing ever opened one: handleIntent() called
                  window.__vscodroid.onFileOpen, which has had no consumer since the
@@ -166,13 +210,15 @@
                  editor on the default folder with no file, no message and nothing in
                  the log to attach to a bug report.
 
-                 Implementing it is not a matter of wiring the hook up. A content://
-                 URI has no POSIX path, and the server only ever sees POSIX paths, so
-                 the file has to be materialised locally, at which point saving
-                 writes to a copy and the user's edits never reach the file they
-                 opened. Advertising nothing is honest; advertising this and silently
-                 dropping edits would not be. Folders still open through the SAF
-                 picker, which does have the sync engine that makes write-back work. -->
+                 The ExternalStorageProvider directory filter above replaces that for
+                 folders: DirectPath.resolveContentUri maps the URI to a real path and
+                 opens the parent directory directly when All Files Access is granted,
+                 or offers the SAF picker fallback otherwise. Individual files from
+                 arbitrary providers are still out of scope: a content:// URI has no
+                 POSIX path the server can open, so an opened file would have to be
+                 materialised locally and every save would write to a copy. Folders
+                 still open through the SAF picker when All Files Access is not held,
+                 which has the sync engine that makes write-back work. -->
         </activity>
 
         <!-- Toolchain settings: manage on-demand language toolchains -->

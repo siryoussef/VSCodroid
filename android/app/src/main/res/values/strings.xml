@@ -58,6 +58,7 @@
          ago it was recorded, so it says nothing about elapsed time. -->
     <string name="status_server_slow_start">The development server is taking longer than usual to start. The editor will open as soon as it is ready.</string>
     <string name="status_updating_python">Updating Python…</string>
+    <string name="status_installing_nix">Installing Nix-on-Droid…</string>
     <!-- Says what happened and what to do about it, and deliberately does not
          claim to have diagnosed anything. The app cannot tell an out-of-memory
          kill from a phantom-process one: both arrive as the same exit code and
@@ -396,6 +397,7 @@
          the user without asking for it, so the sentence has to carry the next
          step itself. -->
     <string name="saf_permission_expired">Permission expired. Please select the folder again.</string>
+    <string name="file_manager_intent_open_picker">This folder type needs Access to All Files. Pick the folder with the folder picker instead.</string>
 
     <!-- A device folder that did not open. Said as one sentence per case, with the
          cause as an argument, rather than as two resources joined in Kotlin: a

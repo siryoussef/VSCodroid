@@ -16,7 +16,9 @@ import com.vscodroid.R
 import com.vscodroid.isExtensionCallback
 import com.vscodroid.setup.ToolchainManager
 import com.vscodroid.setup.ToolchainRegistry
+import com.vscodroid.storage.PrivilegedAccess
 import com.vscodroid.storage.SafStorageManager
+import rikka.shizuku.Shizuku
 import com.vscodroid.util.CrashReporter
 import com.vscodroid.util.Logger
 import com.vscodroid.util.StorageManager
@@ -521,6 +523,8 @@ class AndroidBridge(
     private val onOpenFolderPicker: () -> Unit = {},
     private val onOpenRecentFolder: (Uri) -> Unit = {},
     private val onShowAbout: () -> Unit = {},
+    /** Opens the system All Files Access settings screen for this app. */
+    private val onRequestAllFilesAccess: () -> Unit = {},
     /** Flips and persists whether the Extra Key Row is hidden, answering the new state. */
     private val onToggleExtraKeyRow: () -> Boolean = { false },
     private val safManager: SafStorageManager? = null,
@@ -1108,6 +1112,67 @@ class AndroidBridge(
         if (!security.validateToken(authToken)) return
         Logger.i(tag, "Opening toolchain settings")
         showToolchainSettings()
+    }
+
+    // -- Privileged storage access --
+
+    /**
+     * Returns a JSON object describing the app's current elevated-storage state:
+     * ```json
+     * { "allFilesAccess": true|false,
+     *   "shizukuBackend": "ADB"|"ROOT"|"NOT_GRANTED"|"UNAVAILABLE"|"OTHER",
+     *   "rootShellPresent": true|false }
+     * ```
+     * Called by the saf-bridge extension to decide which grant shortcuts to show.
+     */
+    @JavascriptInterface
+    fun getStorageAccess(authToken: String): String {
+        if (!security.validateToken(authToken)) return ""
+        val state = PrivilegedAccess.current()
+        return org.json.JSONObject().apply {
+            put("allFilesAccess", state.allFilesAccess)
+            put("shizukuBackend", state.shizukuBackend.name)
+            put("rootShellPresent", state.rootShellPresent)
+        }.toString()
+    }
+
+    /**
+     * Sends the user to the system All Files Access settings screen for this app.
+     *
+     * The screen is the only place Android lets the user grant
+     * `MANAGE_EXTERNAL_STORAGE`. If that permission is already held this is a
+     * no-op and the bridge answers normally; the extension checks `allFilesAccess`
+     * in `getStorageAccess` to decide whether to offer the button.
+     */
+    @JavascriptInterface
+    fun requestAllFilesAccess(authToken: String) {
+        if (!security.validateToken(authToken)) return
+        if (android.os.Environment.isExternalStorageManager()) return  // already granted
+        Logger.i(tag, "Opening All Files Access settings")
+        onRequestAllFilesAccess()
+    }
+
+    /**
+     * Requests the Shizuku permission if Shizuku is installed and the binder is live.
+     *
+     * Shizuku shows its own system-level dialog; the result is a broadcast the app
+     * receives on `Shizuku.addRequestPermissionResultListener`, wired in
+     * `MainActivity`. If Shizuku is not running the call is a no-op and the
+     * extension will see `shizukuBackend=UNAVAILABLE` on the next poll.
+     */
+    @JavascriptInterface
+    fun requestShizukuPermission(authToken: String) {
+        if (!security.validateToken(authToken)) return
+        try {
+            if (Shizuku.pingBinder()) {
+                Logger.i(tag, "Requesting Shizuku permission")
+                Shizuku.requestPermission(0)
+            } else {
+                Logger.i(tag, "Shizuku binder not present; skipping permission request")
+            }
+        } catch (e: Exception) {
+            Logger.w(tag, "Shizuku.requestPermission failed: ${e.message}")
+        }
     }
 
     /** The navigation on its own, so a non-bridge caller can reach it too. */

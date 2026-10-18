@@ -44,6 +44,7 @@ flowchart TD
 | ToolchainManager / ToolchainRegistry | Catalog, download and install state, digests, retirement sweep | `ToolchainRegistryTest`, `ToolchainInstallTest`, `ToolchainDigestTest`, `RetiredToolchainTest` |
 | FirstRunSetup | Asset extraction, symlinks, `settings.json` contents, storage preflight | `SettingsPathsTest`, `StoragePreflightTest`, `SymlinkPredicateTest` |
 | SafSyncEngine | Mirror reconciliation, write-back filtering, rename pairing | `SafSyncEngineTest`, `SafWriteBackFilterTest`, `SafRenamePairingTest` |
+| Privileged storage access | The direct-vs-mirror mode decision, SAF tree/document URI to POSIX path mapping (authority, volume, existence), bridge fixture coverage of the grant callbacks | `PrivilegedAccessModeTest`, `DirectPathTest`, `BridgeTokenUniformityTest` |
 | VSCodroidWebViewClient | CDN interception, `vscode-remote` resource serving, downloads | `ResourceInterceptionWiringTest`, `WebviewResourceRootsTest`, `WebviewOriginTrustTest`, `DownloadCoordinatorTest` |
 
 The suite is green. Its size is deliberately not written down here: both

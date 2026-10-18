@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Chat can now use model providers of your own, with or without a GitHub account. The bundled Copilot extension hid every bring-your-own-key provider -- Custom Endpoint, OpenAI, Anthropic, Google, OpenRouter, Azure, xAI and Ollama -- behind a subscription check that only paid Copilot Individual accounts passed; Copilot Free, Business and users with no Copilot subscription at all could not add any. The check is lifted, so **Add Models...** in the model picker lists every provider for everyone, and a model server such as CLIProxyAPI, LiteLLM or Ollama can be used directly. The deprecated OpenAI-Compatible vendor is visible again too; it was hidden on stable builds, which is what this app is.
 - Integrated Nix-on-Droid as the default terminal environment in VS Code. Terminals launch into a rootless Nix-on-Droid PRoot session by default, with access to Nix package management and the vast nixpkgs collection, while retaining standard Bash as an alternative profile.
 - The screen shown when the development server will not start now shows the last lines of the server log, including how each attempt ended, and offers Copy Report. The reason was written only to a file the editor could reach, and the editor was what had failed to open.
 - Opening a phone folder such as Documents with File > Open Folder or Add Folder to Workspace now warns, once per folder each time the editor server starts, that Android hides the files other apps saved there, and offers **VSCodroid: Open Folder from Device**, which shows them.
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **VSCodroid: Copy Bug Report** opens the bug report in an editor, to check before copying it into an issue.
 - Bug reports list the app's recent exits as Android recorded them, such as an ANR or a low-memory kill, and each renderer death the app recovered from.
 - **VSCodroid: UI Scale** sets the size of the whole interface, up to 150% where the screen has room, and keeps it across restarts.
+- **VSCodroid: Storage Access** shows the app's elevated-storage status and offers the ways to raise it: All Files Access (Android's optional permission, granted on its settings page, with the `adb shell appops set com.vscodroid MANAGE_EXTERNAL_STORAGE allow` command copied to the clipboard, or granted through the Shizuku API when Shizuku is running). With All Files Access held, a folder picked with **Open Folder from Device** opens at its real location with no working copy: `.git`, `node_modules` and files of any size are included, and changes other apps make show up live. Without it, folders open through the mirrored copy exactly as before. Files and folders can also be handed over from a file manager (**View**/**Edit** on a folder), and the workspace opens at that folder.
 
 ### Changed
 

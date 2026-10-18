@@ -36,7 +36,7 @@ wv.addJavascriptInterface(bridge, "AndroidBridge")
 ```
 
 The injected name is `AndroidBridge` and that part was always right. The construction
-was not: `AndroidBridge(this)` does not compile. The real constructor takes seventeen
+was not: `AndroidBridge(this)` does not compile. The real constructor takes eighteen
 parameters, five of them required:
 
 ```kotlin
@@ -44,7 +44,8 @@ AndroidBridge(
     context, security, clipboard,          // required
     onBackPressed, onMinimize,             // required callbacks
     onOpenFolderPicker = {}, onOpenRecentFolder = {},
-    onShowAbout = {}, onToggleExtraKeyRow = { false },
+    onShowAbout = {}, onRequestAllFilesAccess = {},
+    onToggleExtraKeyRow = { false },
     safManager = null,                     // defaulted
     onDownloadNamed = { _, _ -> }, onDownloadChunk = { _, _ -> false },
     onDownloadComplete = { _, _ -> },
@@ -85,7 +86,7 @@ is why `listSshKeys` no longer answers with a key's comment and why a forced
    (`SecurityManager.generateToken`, in `bridge/`, not a `security/` package).
    `MainActivity.injectBridgeToken()` writes it to `window.__vscodroid.authToken`
    after the page loads.
-2. **Every method, not a chosen subset**: all 34 `@JavascriptInterface` methods take the
+2. **Every method, not a chosen subset**: all 37 `@JavascriptInterface` methods take the
    token and validate it before doing anything, returning without acting on refusal
    (§2.4 records the six whose refusal value is not an empty one).
    `BridgeTokenUniformityTest` enumerates them by reflection and fails the build
@@ -208,18 +209,19 @@ with `"[]"`, and both are non-empty strings, so truthy until parsed. Read the to
 added without the check, so this holds for the class rather than for the list below.
 
 **Registered is not the same as reachable, and the difference decides what an extension
-can do.** All 34 methods below live on the `AndroidBridge` object injected into the
+can do.** All 37 methods below live on the `AndroidBridge` object injected into the
 workbench page, so anything running in that page's own realm can call them directly. An
 extension cannot: it runs in the web extension host, which does not see objects added by
 `addJavascriptInterface`. Extensions reach the bridge over the BroadcastChannel relay
 that `MainActivity.injectBridgeRelay` opens, and that relay dispatches a hand-written
-list of **17** command names. Grep `d.cmd ===` in `MainActivity.kt` for the current set:
+list of **20** command names. Grep `d.cmd ===` in `MainActivity.kt` for the current set:
 
 > `clearCaches`, `generateBugReport`, `generateSshKey`, `getRecentFolders`,
-> `getSshPublicKey`, `getStorageBreakdown`, `getUiScale`, `listSafMirrors`,
-> `listSshKeys`, `openExternalUrl`, `openFolderPicker`, `openRecentFolder`,
-> `openToolchainSettings`, `reclaimSafMirror`, `setUiScale`, `showAboutDialog`,
-> `toggleExtraKeyRow`
+> `getSshPublicKey`, `getStorageAccess`, `getStorageBreakdown`, `getUiScale`,
+> `listSafMirrors`, `listSshKeys`, `openExternalUrl`, `openFolderPicker`,
+> `openRecentFolder`, `openToolchainSettings`, `reclaimSafMirror`,
+> `requestAllFilesAccess`, `requestShizukuPermission`, `setUiScale`,
+> `showAboutDialog`, `toggleExtraKeyRow`
 
 Two of them reach no bridge method. `getUiScale` and `setUiScale` are answered by the
 page itself, since the UI scale is the page's own viewport kept in its localStorage:
@@ -361,6 +363,24 @@ fun openFolderPicker(authToken: String)
 // Returns NOTHING. The picked folder does not come back through this call:
 // MainActivity receives the activity result, syncs the folder to its mirror
 // and reloads the workbench on the new path.
+
+@JavascriptInterface
+fun getStorageAccess(authToken: String): String
+// Reports the elevated-storage state as JSON:
+// {"allFilesAccess":bool,"shizukuBackend":"ADB|ROOT|NOT_GRANTED|UNAVAILABLE|OTHER",
+//  "rootShellPresent":bool}
+// Direct path is in force exactly when allFilesAccess is true (PrivilegedAccess).
+
+@JavascriptInterface
+fun requestAllFilesAccess(authToken: String)
+// Opens the system All Files Access settings page for this app so the user can
+// flip the MANAGE_EXTERNAL_STORAGE toggle. No-op when already granted.
+
+@JavascriptInterface
+fun requestShizukuPermission(authToken: String)
+// Asks Shizuku for its permission when its binder is live. The result reaches
+// MainActivity's Shizuku.OnRequestPermissionResultListener, which tells the page
+// to re-read getStorageAccess.
 ```
 
 There is no `openFilePicker` and no `requestStoragePermission`. Individual files are

@@ -314,6 +314,8 @@ flowchart TD
   APP --> STORE["storage/"]
   STORE --> ST1["SafStorageManager.kt (SAF folder grants and mirrors)"]
   STORE --> ST2["SafSyncEngine.kt (reconcile mirror with content URI)"]
+  STORE --> ST3["PrivilegedAccess.kt (All Files Access / Shizuku / root state; the direct-vs-mirror decision)"]
+  STORE --> ST4["DirectPath.kt (SAF tree/document URI to POSIX path, for the direct route)"]
   APP --> UTIL["util/"]
   UTIL --> U1["Environment.kt (PATH, HOME, env setup)"]
   UTIL --> U2["PortFinder.kt (find available localhost port)"]

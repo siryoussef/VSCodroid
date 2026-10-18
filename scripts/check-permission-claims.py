@@ -77,7 +77,7 @@ NODE = f"{{{TOOLS_NS}}}node"
 PERMISSION_ELEMENTS = ("uses-permission", "uses-permission-sdk-23")
 REMOVING_NODES = ("remove", "removeAll")
 
-# What the merger is expected to add on top of our own four. Written down rather
+# What the merger is expected to add on top of our own five. Written down rather
 # than derived, so that a library adding a permission is a change somebody has to
 # make here and explain in the policy, instead of one that lands quietly. The
 # merged half below checks this list against a real merged manifest whenever one
@@ -89,6 +89,12 @@ MERGED_IN = {
     # named after the applicationId, which is why names are compared on their
     # last segment.
     "DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+    # dev.rikka.shizuku:provider, from its AndroidManifest.xml. It asks for the
+    # Shizuku manager's own API-gating permission; the manager defines it, so
+    # without the manager installed it resolves to nothing, and with it installed
+    # it is signature-level and never granted to this app. It rides along with
+    # the optional All Files Access / ADB capability and is named in the policy.
+    "API_V23",
 }
 
 # A permission name as the policy writes it: in backticks, and recognised by its

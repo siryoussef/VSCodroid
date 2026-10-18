@@ -23,12 +23,19 @@ VSCodroid runs a local code editor server entirely on your Android device. The e
 
 All code execution -- whether Node.js, Python, Bash, or any other bundled runtime -- happens 100% on your device.
 
-The app asks for four Android permissions of its own. `INTERNET` covers the
+The app asks for five Android permissions of its own. `INTERNET` covers the
 user-initiated cases listed under **Network Access** below, and the loopback
 traffic between the editor page and the local server. `FOREGROUND_SERVICE` and
 `FOREGROUND_SERVICE_SPECIAL_USE` keep that local server alive while you are
 working. `POST_NOTIFICATIONS` is for the notification showing the server's
-status.
+status. `MANAGE_EXTERNAL_STORAGE` is optional and never granted automatically:
+it is the "All Files Access" toggle Android shows on a dedicated settings page,
+and the app asks for that page only when you tap **VSCodroid: Storage Access**
+and choose to grant it. With it, a folder you pick opens directly from its real
+location on your storage, with no working copy made. Without it, the app falls
+back to Android's folder picker, which grants access one folder at a time. The
+app never reads files outside folders you have granted, whichever route is in
+use.
 
 Two more are added by libraries the app is built with, and the Play listing
 shows that merged set rather than ours, so they are named here as well.
@@ -37,7 +44,12 @@ is what downloads a language toolchain when you pick one. The other is a
 permission the app defines for itself, `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`,
 added by AndroidX at signature protection level, which means only code signed
 with the same key as this app can use it; it exists so that a receiver the app
-registers while running cannot be reached by another app.
+registers while running cannot be reached by another app. A third,
+`moe.shizuku.manager.permission.API_V23`, comes from the Shizuku client library
+that backs the optional ADB/root capabilities: it is the Shizuku manager's own
+API-gating permission, defined by that app rather than by Android, and it is
+never granted to VSCodroid — without the manager installed it resolves to
+nothing, and with it installed it is signature-level.
 
 There is no permission here for location, contacts, the camera, the microphone,
 the phone state, or any device identifier.

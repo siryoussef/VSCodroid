@@ -37,7 +37,9 @@ A practical guide to using VSCodroid -- the full VS Code IDE running natively on
 | Settings and data | `~/.vscodroid/` |
 | SSH keys | `~/.ssh/` |
 
-All files are stored in the app's private sandbox. No root access is required.
+By default all files are stored in the app's private sandbox. No root access is
+required, and none is used unless you explicitly grant an optional capability
+(see **All Files Access** under [Opening Files and Folders](#opening-files-and-folders)).
 
 ---
 
@@ -66,7 +68,21 @@ VSCodroid is VS Code. If you have used VS Code on desktop, everything works the 
   can be granted whole. **VSCodroid: Open Recent Folder**, in the same menu,
   lists the folders you have granted, with **Browse device...** at the end to
   add another.
-- A device folder is edited as a copy inside the app. The copy is read from the
+- **All Files Access (optional, removes every limit below).** If you grant
+  VSCodroid Android's *All Files Access* permission, a folder picked with
+  **Open Folder from Device** is edited directly at its real location: no copy
+  is made, `.git` and `node_modules` are included, files of any size work, and
+  changes another app makes show up live. Run **VSCodroid: Storage Access** and
+  choose **All Files Access** to open the settings page and flip the toggle.
+  The same grant can also be given from a computer with
+  `adb shell appops set com.vscodroid MANAGE_EXTERNAL_STORAGE allow`, or through
+  the [Shizuku](https://shizuku.rikka.app/) app if you have it. Without the
+  grant, everything below still applies exactly as before. The permission can
+  be revoked at any time on the same settings page; folders already open at
+  their real path keep working until the next launch, which returns them to
+  the copy-based route.
+- A device folder **without All Files Access** is edited as a copy inside the
+  app. The copy is read from the
   device when you open the folder, and each save is written back to the device
   as you make it. It leaves out files the device folder reports as over 50 MB,
   and the directories `.git`, `node_modules`, `.gradle`, `.idea`, `venv`, `.env`
@@ -458,6 +474,77 @@ Notebooks run in a Python virtual environment. Create one in the terminal with `
 If the extension offers to install `jupyter` and `notebook`, decline: that is a Jupyter server, whose dependencies cannot be built here and whose commands Android will not run from the app's storage.
 
 The Android build of that add-on is pointed at by `ZEROMQ_PREBUILD`, which every process VSCodroid starts inherits. A Node project of your own pinned to `zeromq` 5.x or 6.0.x picks it up too, which is what lets it load at all here. To run such a project against its own copy instead, clear the variable for that command: `ZEROMQ_PREBUILD= node app.js`.
+
+### Using Your Own AI Model (CLIProxyAPI, Ollama, LiteLLM, ...)
+
+Chat does not need a Copilot subscription. The model picker lists bring-your-own-key
+providers you can configure yourself: **Custom Endpoint** (any OpenAI-compatible or
+Anthropic-compatible server), plus OpenAI, Anthropic, Google, OpenRouter, Azure, xAI
+and Ollama with their own sign-up pages.
+
+To add one:
+
+1. Open Chat and the model picker (the model name at the bottom of the chat input,
+   or the gear beside it).
+2. Choose **Add Models...** and pick a provider. For a self-hosted or proxied server
+   pick **Custom Endpoint**; it supports the Chat Completions API, the Responses API
+   and the Anthropic Messages API, selectable per model.
+3. Name the group (for example `cliproxy`), enter an API key if the server checks
+   one, and add models: an `id` the server accepts, a display `name`, the `url`, and
+   what the model supports (`toolCalling`, `vision`, `maxInputTokens`,
+   `maxOutputTokens`, `contextWindow`).
+
+**CLIProxyAPI** is one such server: it exposes models you are signed into elsewhere
+(Claude, Gemini, Codex and others) behind a single OpenAI-compatible and
+Anthropic-compatible HTTP API. Run it anywhere the phone can reach:
+
+- on the phone itself in Termux, where it listens on `http://127.0.0.1:8080`;
+  in the editor, `localhost` is the phone, because requests are sent by the
+  editor server on the device and not by the browser;
+- or on a computer on the same network, under its address such as
+  `http://192.168.1.20:8080`.
+
+A Custom Endpoint group pointing at it looks like this (the same shape the
+**Add Models...** flow writes; the file, `chatLanguageModels.json` under the
+user profile, is created empty the first time the editor needs it, and can be
+edited directly afterwards):
+
+```json
+[
+  {
+    "vendor": "customendpoint",
+    "name": "cliproxy",
+    "apiType": "chat-completions",
+    "models": [
+      {
+        "id": "claude-sonnet-4-5",
+        "name": "Claude Sonnet 4.5 (CLIProxyAPI)",
+        "url": "http://127.0.0.1:8080/v1",
+        "toolCalling": true,
+        "maxInputTokens": 200000,
+        "maxOutputTokens": 32000
+      }
+    ]
+  }
+]
+```
+
+The file is an array of groups, and a group's configuration fields sit beside
+`vendor` and `name`, not nested. Model ids must match what the proxy serves;
+ask its `/v1/models` endpoint. The same shape works for Ollama
+(`http://127.0.0.1:11434/v1`), LiteLLM, vLLM or any other OpenAI-compatible
+server.
+
+The API key is deliberately absent above: keys are secrets, and the editor
+stores them in the extension's secret storage rather than in this file -- a
+key typed into the file directly is not read. Add one through **Add Models...**
+and its API Key prompt, which stores it that way. A server that checks no key,
+such as a default CLIProxyAPI, needs none, and the request then carries an
+empty bearer token. If your proxy does check a key, enter it in the prompt
+rather than the file.
+
+Groups live in `chatLanguageModels.json` under the user profile, inside the
+app-private directory.
 
 ### What Is Not Available
 

@@ -53,6 +53,10 @@ class BridgeTokenUniformityTest {
         val onOpenFolderPicker: () -> Unit = mockk(relaxed = true)
         val onOpenRecentFolder: (Uri) -> Unit = mockk(relaxed = true)
         val onShowAbout: () -> Unit = mockk(relaxed = true)
+        // The All Files Access hand-off. Watched for the same reason as the three
+        // above: requestAllFilesAccess refuses a bad token first, then reaches
+        // this, and unwatched the OBEY half would have no signal for it.
+        val onRequestAllFilesAccess: () -> Unit = mockk(relaxed = true)
         val onToggleExtraKeyRow: () -> Boolean = mockk(relaxed = true)
         val safManager: SafStorageManager = mockk(relaxed = true)
         // Passed rather than left to default, and that is the whole point of
@@ -99,6 +103,7 @@ class BridgeTokenUniformityTest {
             onOpenFolderPicker = onOpenFolderPicker,
             onOpenRecentFolder = onOpenRecentFolder,
             onShowAbout = onShowAbout,
+            onRequestAllFilesAccess = onRequestAllFilesAccess,
             onToggleExtraKeyRow = onToggleExtraKeyRow,
             safManager = safManager,
             onDownloadNamed = onDownloadNamed,
@@ -113,7 +118,8 @@ class BridgeTokenUniformityTest {
         /** Everything the bridge can reach except the validator it is allowed to consult. */
         val collaborators = listOf(
             context, clipboard, onBackPressed, onMinimize,
-            onOpenFolderPicker, onOpenRecentFolder, onShowAbout, onToggleExtraKeyRow, safManager,
+            onOpenFolderPicker, onOpenRecentFolder, onShowAbout, onRequestAllFilesAccess,
+            onToggleExtraKeyRow, safManager,
             onDownloadNamed, onDownloadChunk, onDownloadComplete,
             onListMirrors, onReclaimMirror, onAsyncAnswer, diskWork,
         )

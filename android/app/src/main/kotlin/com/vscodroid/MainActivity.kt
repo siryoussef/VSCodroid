@@ -68,6 +68,8 @@ import com.vscodroid.service.NodeService
 import com.vscodroid.service.StartupNotice
 import com.vscodroid.setup.FirstRunSetup
 import com.vscodroid.setup.ToolchainManager
+import com.vscodroid.storage.DirectPath
+import com.vscodroid.storage.PrivilegedAccess
 import com.vscodroid.storage.SafFolderInfo
 import com.vscodroid.storage.SafStorageManager
 import com.vscodroid.util.Logger
@@ -408,6 +410,15 @@ class MainActivity : AppCompatActivity() {
      * When a user selects a folder, we persist the permission, sync to a local mirror,
      * and reload VS Code with the mirror path.
      */
+    /**
+     * Launched when the user taps the All Files Access settings shortcut from within the
+     * app's storage permission screen. The result is ignored; we check the permission live
+     * when the activity resumes rather than trusting the intent return.
+     */
+    private val allFilesAccessLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* result checked in onResume via PrivilegedAccess.current() */ }
+
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -760,8 +771,14 @@ class MainActivity : AppCompatActivity() {
         checkWebViewVersion()
         // Reading it here, and not only in onNewIntent, is what makes a sign-in
         // survive the app being killed while the browser had the screen. See
-        // receiveCallbackIntent.
-        receiveCallbackIntent(intent)
+        // receiveCallbackIntent. The file-manager route goes first for the reason
+        // onNewIntent gives it: a directory hand-off is not a callback, and the
+        // two never share an intent. On a cold start serverPort is still 0, so
+        // the hand-off only records the folder, and the ordinary server-ready
+        // path opens it when the server comes up.
+        if (!receiveFileManagerIntent(intent)) {
+            receiveCallbackIntent(intent)
+        }
 
         // Last, and the position is the whole of it. Everything above runs once
         // per launch and touches the filesystem on purpose; what comes after is
@@ -773,7 +790,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        receiveCallbackIntent(intent)
+        // Try the new file-manager open-with path first; fall through to the
+        // OAuth callback relay when the intent is not a directory hand-off.
+        if (!receiveFileManagerIntent(intent)) {
+            receiveCallbackIntent(intent)
+        }
     }
 
     /**
@@ -871,6 +892,55 @@ class MainActivity : AppCompatActivity() {
      *
      * Both messages are fixed text; nothing from the callback reaches the screen.
      */
+    /**
+     * Handles an "Open with VSCodroid" intent from a file-manager app.
+     *
+     * Only ExternalStorageProvider `content://` directory URIs and `file://` URIs are
+     * accepted. Other URI schemes or authorities are not handled, and this method returns
+     * false so the caller can try the OAuth callback relay instead.
+     *
+     * When All Files Access is active the URI is mapped to a real POSIX directory path
+     * and the workspace is opened there directly. When it is not active the user is
+     * offered the SAF folder picker, because mirroring a single file is not helpful.
+     *
+     * @return true when the intent was a file-manager hand-off (even if we could not open
+     *   it), false when the intent is something else entirely.
+     */
+    private fun receiveFileManagerIntent(intent: Intent?): Boolean {
+        val action = intent?.action ?: return false
+        if (action != Intent.ACTION_VIEW && action != Intent.ACTION_EDIT) return false
+        val uri = intent.data ?: return false
+
+        // Only process the URI types we declared filters for.
+        val isDirectory = intent.type == "vnd.android.document/directory"
+        val isFileUri = uri.scheme == "file"
+        val isExternalStorageContent = uri.scheme == "content" &&
+                uri.authority == "com.android.externalstorage.documents"
+
+        if (!isDirectory && !isFileUri && !isExternalStorageContent) return false
+
+        val resolvedPath = DirectPath.resolveContentUri(uri)
+        if (resolvedPath == null) {
+            Logger.w(tag, "Received a file-manager intent with an unresolvable URI; " +
+                    "offering SAF picker as fallback")
+            Toast.makeText(this, R.string.file_manager_intent_open_picker, Toast.LENGTH_LONG).show()
+            openFolderPicker()
+            return true
+        }
+
+        // resolvedPath is a file or directory. Open its parent directory as the workspace.
+        val workspaceDir = if (File(resolvedPath).isDirectory) resolvedPath
+        else File(resolvedPath).parent ?: resolvedPath
+
+        Logger.i(tag, "File-manager intent: opening the folder it names")
+        if (serverPort > 0) {
+            navigateToFolder(serverPort, workspaceDir)
+        } else {
+            rememberWorkspaceFolder(workspaceDir)
+        }
+        return true
+    }
+
     private fun receiveCallbackIntent(intent: Intent?) {
         val uri = intent?.data ?: return
         if (!isExtensionCallback(uri.scheme, uri.host)) return
@@ -1087,17 +1157,30 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Wrapped because the listener registry is only reachable once Shizuku's
+        // provider has run; a device without Shizuku must not lose the activity
+        // over a listener the process will never use.
+        try {
+            rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermissionResultListener)
+        } catch (e: Exception) {
+            Logger.w(tag, "Shizuku listener not registered: ${e.message}")
+        }
+        handleResumeFromBackground()
+        refreshToolchainCommands()
+    }
+
     override fun onStop() {
         super.onStop()
+        try {
+            rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener)
+        } catch (_: Exception) {
+            // Nothing to remove if the registration above never happened.
+        }
         if (serverPort > 0) {
             backgroundedAt = SystemClock.elapsedRealtime()
         }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        handleResumeFromBackground()
-        refreshToolchainCommands()
     }
 
     /**
@@ -1140,7 +1223,7 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    // -- SAF Folder Picker --
+    // -- SAF Folder Picker & elevated-storage grant flows --
 
     /**
      * Opens the Android SAF folder picker UI.
@@ -1156,6 +1239,41 @@ class MainActivity : AppCompatActivity() {
             Logger.w(tag, "No document tree picker on this device", e)
         }
     }
+
+    /**
+     * Sends the user to the system All Files Access screen for this app.
+     *
+     * `MANAGE_EXTERNAL_STORAGE` is never granted automatically; Android requires the
+     * user to flip it explicitly on a dedicated settings page. The permission is
+     * optional: SAF continues to work when it is not granted. When granted, folders
+     * opened via the SAF picker are served directly from their real path, so .git,
+     * large files and node_modules all work without mirroring.
+     */
+    private fun openAllFilesAccessSettings() {
+        try {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                android.net.Uri.parse("package:${packageName}"),
+            )
+            allFilesAccessLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            Logger.w(tag, "All Files Access settings not available on this device")
+        }
+    }
+
+    /**
+     * Shizuku permission-result receiver, registered/unregistered with the activity
+     * lifecycle so the listener does not outlive it.
+     */
+    private val shizukuPermissionResultListener =
+        rikka.shizuku.Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+            val granted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
+            Logger.i(tag, "Shizuku permission result: granted=$granted")
+            webView?.evaluateJavascript(
+                "window.__vscodroid?.onStorageAccessChanged?.()",
+                null,
+            )
+        }
 
     /**
      * Starts watching a mirror the workbench opened without going through Kotlin.
@@ -1227,6 +1345,40 @@ class MainActivity : AppCompatActivity() {
     private fun handleSafFolderSelected(uri: Uri) = openSafFolder(uri, navigate = true)
 
     /**
+     * Opens a device folder at its real path when All Files Access is held: no
+     * mirror copy, no initial sync, no write-back watcher. The grant is persisted
+     * so Open Recent still lists the folder, and the navigation is the ordinary
+     * one the server-ready path also uses.
+     *
+     * Extracted from [openSafFolder] so that function keeps the shape the thread
+     * tests hold it to: exactly two provider round trips, both after the progress
+     * dialog is up, the first inside NonCancellable. This route takes neither on
+     * its own thread's behalf -- there is no copy to show progress for -- but the
+     * grant still rides NonCancellable for the same reason the mirror route's
+     * does: a scope cancelled the moment after the picker returned must not drop
+     * the folder out of the recent list silently.
+     *
+     * The log names the folder by its mirror digest and never by [path] or the
+     * tree URI: `path` derives from `uri`, [LogTaint] reads this whole file, and
+     * a real path on shared storage is the user's directory written out, which is
+     * the same leak the digest at the top of [openSafFolder] exists to prevent.
+     */
+    private fun openDeviceFolderDirectly(uri: Uri, path: String, navigate: Boolean) {
+        Logger.i(
+            tag,
+            "Opening device folder ${safManager.getMirrorDir(uri).name} directly, no mirror",
+        )
+        lifecycleScope.launch(NonCancellable + Dispatchers.IO) {
+            safManager.persistPermission(uri)
+        }
+        if (navigate && serverPort > 0) {
+            navigateToFolder(serverPort, path)
+        } else {
+            rememberWorkspaceFolder(path)
+        }
+    }
+
+    /**
      * Syncs a device folder down, starts watching it, and points the editor at it.
      *
      * @param navigate whether to load the mirror in the WebView afterwards. False
@@ -1235,6 +1387,19 @@ class MainActivity : AppCompatActivity() {
      *   would throw away the page the user just opened.
      */
     private fun openSafFolder(uri: Uri, navigate: Boolean) {
+        // When All Files Access is active, map the SAF tree URI to the real
+        // filesystem path and open it directly, skipping the mirror entirely.
+        // This removes the 50 MB cap, the .git/.node_modules exclusions, the
+        // one-folder-at-a-time watcher, and the stale-external-change limitation.
+        // The whole route lives in the helper below, so this function keeps the
+        // provider-call shape the thread tests hold it to: two round trips, both
+        // after the dialog is up, the first inside NonCancellable.
+        val directPath = DirectPath.resolve(uri)
+        if (directPath != null && PrivilegedAccess.current().allFilesAccess) {
+            openDeviceFolderDirectly(uri, directPath, navigate)
+            return
+        }
+
         // The mirror's name and never the tree URI. A SAF tree URI spells the
         // user's own directory (`.../tree/primary%3ADocuments%2F<folder>`),
         // `Logger.i` is not gated on a debuggable build, and logcat is readable
@@ -2995,6 +3160,7 @@ class MainActivity : AppCompatActivity() {
             onOpenFolderPicker = { runOnUiThread { openFolderPicker() } },
             onOpenRecentFolder = { uri -> runOnUiThread { openRecentSafFolder(uri) } },
             onShowAbout = { runOnUiThread { showAboutDialog() } },
+            onRequestAllFilesAccess = { runOnUiThread { openAllFilesAccessSettings() } },
             // The preference is the record and is flipped here, on the bridge
             // thread, which runs one call at a time, so two quick toggles each read
             // the other's write; apply() updates the in-memory copy before it
@@ -5794,6 +5960,15 @@ class MainActivity : AppCompatActivity() {
                             result = AndroidBridge.reclaimSafMirror(
                                 token, d.hash, d.force === true, d.id);
                             if (result !== '') ch.postMessage({id: d.id, ok: false, error: result});
+                        } else if (d.cmd === 'getStorageAccess') {
+                            result = AndroidBridge.getStorageAccess(token);
+                            ch.postMessage({id: d.id, ok: true, data: result});
+                        } else if (d.cmd === 'requestAllFilesAccess') {
+                            AndroidBridge.requestAllFilesAccess(token);
+                            ch.postMessage({id: d.id, ok: true});
+                        } else if (d.cmd === 'requestShizukuPermission') {
+                            AndroidBridge.requestShizukuPermission(token);
+                            ch.postMessage({id: d.id, ok: true});
                         } else {
                             // A command this chain does not know is answered rather
                             // than dropped. Without this the caller's promise died

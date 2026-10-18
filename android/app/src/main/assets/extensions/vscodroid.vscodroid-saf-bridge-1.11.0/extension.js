@@ -22,6 +22,7 @@
  * - vscodroid.manageToolchains     : Opens the Android Toolchains screen
  * - vscodroid.toggleExtraKeyRow    : Hides or shows the key row above the keyboard
  * - vscodroid.uiScale              : Sets the size of the whole interface
+ * - vscodroid.storageAccess        : Shows All Files Access / Shizuku / root status
  * - vscodroid.about                : Opens the Android About dialog
  * - vscodroid.copyBugReport        : Opens a bug report to read, then copies it
  *
@@ -815,6 +816,121 @@ function activate(context) {
     };
     reopenCarriedEditors().then(offerNamedPath).catch(() => {});
 
+    // -- Storage access / privilege grants --
+
+    /**
+     * Shows the current elevated-storage status and guides the user toward
+     * granting All Files Access or Shizuku permission.
+     *
+     * When All Files Access is active, device folders opened via the folder
+     * picker are served directly from their real path: no copy is made, .git
+     * and node_modules are accessible, and there is no 50 MB file cap.
+     *
+     * When Shizuku is running, the app can request appops-level access via adb
+     * (ADB backend) or root (root backend), unlocking the same capabilities.
+     */
+    const storageAccessCmd = vscode.commands.registerCommand(
+        'vscodroid.storageAccess',
+        async () => {
+            let state;
+            try {
+                const json = /** @type {string} */ (
+                    await sendBridgeCommand('getStorageAccess')
+                );
+                state = JSON.parse(json || '{}');
+            } catch (/** @type {*} */ err) {
+                vscode.window.showErrorMessage(
+                    `Could not read storage access state: ${err.message}`
+                );
+                return;
+            }
+
+            const { allFilesAccess, shizukuBackend, rootShellPresent } = state;
+
+            /** @type {(vscode.QuickPickItem & { action?: string })[]} */
+            const items = [];
+
+            if (allFilesAccess) {
+                items.push({
+                    label: '$(check) All Files Access',
+                    description: 'Granted — device folders open directly, no copy made',
+                });
+            } else {
+                items.push({
+                    label: '$(circle-slash) All Files Access',
+                    description: 'Not granted — device folders are mirrored (50 MB cap, no .git)',
+                    action: 'requestAllFiles',
+                });
+            }
+
+            if (shizukuBackend === 'ADB') {
+                items.push({
+                    label: '$(check) Shizuku',
+                    description: 'ADB identity — can grant All Files Access via appops',
+                });
+            } else if (shizukuBackend === 'ROOT') {
+                items.push({
+                    label: '$(check) Shizuku',
+                    description: 'Root identity — full filesystem access available',
+                });
+            } else if (shizukuBackend === 'NOT_GRANTED') {
+                items.push({
+                    label: '$(warning) Shizuku',
+                    description: 'Running but permission not granted — tap to request',
+                    action: 'requestShizuku',
+                });
+            } else if (shizukuBackend === 'UNAVAILABLE') {
+                items.push({
+                    label: '$(circle-slash) Shizuku',
+                    description: 'Not running — install Shizuku for ADB/root capabilities',
+                    action: 'openShizukuInstall',
+                });
+            }
+
+            if (rootShellPresent) {
+                items.push({
+                    label: '$(check) Root shell detected',
+                    description: 'su binary present — root capabilities are available via Shizuku/Sui',
+                });
+            }
+
+            if (!allFilesAccess && shizukuBackend === 'ADB') {
+                items.push({
+                    label: '$(key) Grant All Files Access via ADB',
+                    description: 'Run: adb shell appops set ' + 'com.vscodroid MANAGE_EXTERNAL_STORAGE allow',
+                    action: 'adbHint',
+                });
+            }
+
+            const picked = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Storage access capabilities',
+            });
+            if (!picked || !picked.action) return;
+
+            if (picked.action === 'requestAllFiles') {
+                await sendBridgeCommand('requestAllFilesAccess');
+                vscode.window.showInformationMessage(
+                    'All Files Access settings opened. Flip the toggle, then run ' +
+                    '"VSCodroid: Storage Access" again to confirm it is granted.'
+                );
+            } else if (picked.action === 'requestShizuku') {
+                await sendBridgeCommand('requestShizukuPermission');
+            } else if (picked.action === 'openShizukuInstall') {
+                await sendBridgeCommand('openExternalUrl', {
+                    url: 'https://shizuku.rikka.app/download/'
+                });
+            } else if (picked.action === 'adbHint') {
+                await vscode.env.clipboard.writeText(
+                    'adb shell appops set com.vscodroid MANAGE_EXTERNAL_STORAGE allow'
+                );
+                vscode.window.showInformationMessage(
+                    'ADB command copied to clipboard. Run it in a terminal connected to your device, ' +
+                    'then reopen VSCodroid.'
+                );
+            }
+        }
+    );
+
     context.subscriptions.push(
         workspaceFoldersListener,
         openFolderCmd,
@@ -831,7 +947,8 @@ function activate(context) {
         aboutCmd,
         copyReportItem,
         reportClosedListener,
-        bugReportCmd
+        bugReportCmd,
+        storageAccessCmd,
     );
 }
 

@@ -260,8 +260,21 @@ to: patch 0005 disables the service worker upstream uses to scope each webview t
 | `FOREGROUND_SERVICE`             | Keep Node.js alive in background                | Install time   |
 | `FOREGROUND_SERVICE_SPECIAL_USE` | Dev server foreground service type              | Install time   |
 | `POST_NOTIFICATIONS`             | Foreground Service notification (API 33+)       | Runtime        |
+| `MANAGE_EXTERNAL_STORAGE`        | Optional All Files Access for direct device-folder workspaces | User, on the system settings page |
 
-Those four are what **this app's own** `AndroidManifest.xml` declares. The **installed** app holds
+The first four are what **this app's own** `AndroidManifest.xml` always asks for.
+`MANAGE_EXTERNAL_STORAGE` is declared but optional: the app never requests it on startup, and
+the only way it becomes active is the user flipping the toggle on Android's All Files Access
+screen (reached via **VSCodroid: Storage Access**), or granting it out-of-band with
+`adb shell appops set com.vscodroid MANAGE_EXTERNAL_STORAGE allow` or through the Shizuku API.
+While it is absent the SAF mirror continues to work unchanged; while it is held, folders chosen
+in the SAF picker are opened at their real POSIX path with no copy made
+(`PrivilegedAccess`, `DirectPath`). Shizuku's own library (`dev.rikka.shizuku:api`,
+`:provider`) adds `moe.shizuku.manager.permission.API_V23`, which the Shizuku manager app
+defines and never grants to this app — recorded in the table below rather than in this one,
+because it arrives from a library rather than from our manifest.
+
+The **installed** app holds
 more, because the manifest merger adds permissions from libraries, and a Play Store listing shows
 the merged set rather than ours:
 
@@ -269,6 +282,7 @@ the merged set rather than ours:
 | ------------------------------------------------ | -------------------------------------------------------------------------- |
 | `FOREGROUND_SERVICE_DATA_SYNC`                    | `com.google.android.play:asset-delivery`, which backs toolchain downloads   |
 | `<applicationId>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | AndroidX, for its own runtime-registered receivers                 |
+| `moe.shizuku.manager.permission.API_V23`          | `dev.rikka.shizuku:provider`, the Shizuku client library; the manager app defines this permission, so it is never granted to this app (signature-level when the manager is installed, unresolvable when it is not) |
 
 Neither table is the authority. `android/app/build/outputs/logs/manifest-merger-release-report.txt`
 is, and reading it is the step that catches a library adding a permission nobody asked for.
@@ -280,7 +294,6 @@ until 2026-08-20; the rest have never been in scope.
 
 | Permission                                              | Why not                                                                                                                                                                                                                                                          |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MANAGE_EXTERNAL_STORAGE`                               | It would pull in a Play declaration process the app has no need of. Folders outside app storage are reached through SAF, which is a per-folder user grant rather than a permission, and which has the sync engine that makes write-back work                       |
 | `WAKE_LOCK`                                             | A consequence worth knowing: a foreground service keeps the process alive but does not keep the CPU awake, so a long build or test run in the terminal can stall when the screen goes off. Holding a wake lock is a product decision nobody has made yet           |
 | `READ_EXTERNAL_STORAGE`                                 | SAF is used instead, which grants one folder at a time rather than the whole of shared storage                                                                                                                                                                    |
 | `REQUEST_INSTALL_PACKAGES`                              | Not needed. The app installs no APKs; toolchains land in `filesDir` as plain files                                                                                                                                                                                |

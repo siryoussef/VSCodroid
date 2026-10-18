@@ -16,6 +16,13 @@ if [ -d "$REH_SRC" ]; then
     rm -rf "$ASSETS_DIR/vscode-reh"
     cp -r "$REH_SRC" "$ASSETS_DIR/vscode-reh"
     echo "  ✓ vscode-reh: $(du -sh "$ASSETS_DIR/vscode-reh" | cut -f1)"
+
+    # Enable 3rd-party model providers (BYOK) in the bundled Copilot extension.
+    # The extension gates Custom Endpoint, OpenAI, Anthropic and the other
+    # providers behind a GitHub Copilot entitlement check that most users fail.
+    # This lifts that gate so any user can add their own API key or point the
+    # editor at a local model server (Ollama, LiteLLM, CLIProxyAPI, etc.).
+    python3 "$SCRIPT_DIR/patch-copilot-byok.py" "$ASSETS_DIR/vscode-reh"
 else
     # Fatal rather than a warning: this copy is the only thing that puts the
     # server into the APK, so carrying on produces a build that installs, opens,

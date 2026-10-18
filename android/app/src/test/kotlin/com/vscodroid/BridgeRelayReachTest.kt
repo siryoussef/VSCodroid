@@ -12,9 +12,9 @@ import org.junit.jupiter.api.Test
  * `product.json` carries no `webEndpointUrlTemplate`, and without one the
  * workbench starts the web extension host in a SAME-ORIGIN iframe and warns that
  * it has ("The web worker extension host is started in a same-origin iframe!" in
- * `out/vs/code/browser/workbench/workbench.js`). A `BroadcastChannel` is scoped by origin, so
- * every web extension installed from Open VSX shares this one, can post any of
- * the seventeen commands, and can read every answer posted back. The session token
+ * `out/vs/code/browser/workbench/workbench.js`). A `BroadcastChannel` is scoped by
+ * origin, so every web extension installed from Open VSX shares this one, can post any
+ * of the twenty commands, and can read every answer posted back. The session token
  * the relay reads out of `window.__vscodroid` is no barrier: it lives on that same
  * origin, so anything able to post is able to read it.
  *

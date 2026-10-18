@@ -39,6 +39,10 @@ yarn-error.log*
 
 # ===== Native Binaries (large, built separately) =====
 /android/app/src/main/jniLibs/arm64-v8a/*.so
+# Written by build-native-addons.sh beside them, recording which Node the
+# addons were paired against. A build marker, not source: the same value is
+# pinned in build-native-addons.sh.
+/android/app/src/main/jniLibs/arm64-v8a/.libnode-version
 
 # ===== VS Code Assets (built, not committed) =====
 /android/app/src/main/assets/vscode-web/
